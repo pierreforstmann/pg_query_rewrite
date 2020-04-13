@@ -1,4 +1,4 @@
-# pgquery_rewrite
+# pg_query_rewrite
 pg_query_rewrite is a PostgreSQL extension which allows to translate a given source SQL statement into another pre-defined SQL statement.
 
 
@@ -24,7 +24,7 @@ At server level with `shared_preload_libraries` parameter: <br>
 pg_query_rewrite has 2 specific GUC: <br>
 `pg_query_rewrite.source`: source SQL statement <br>
 `pg_query_rewrite.destination`: destination SQL statement <br>
-Only 1 single statement can be defined. The SQL statement much exactly match the source statement (lowercase/uppercase and number of space characters).
+Only 1 single statement can be defined. The SQL statement must exactly match the source statement (lowercase/uppercase and number of space characters).
 
 ## Example
 
