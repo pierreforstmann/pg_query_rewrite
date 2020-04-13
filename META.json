@@ -1,0 +1,49 @@
+{
+   "name": "pg_query_rewrite",
+   "abstract": "rewrites SQL statement",
+   "version": "0.0.1",
+   "maintainer": [
+      "Pierre Forstmann"
+   ],
+   "license": {
+      "PostgreSQL": "http://www.postgresql.org/about/licence"
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "9.5.21"
+         },
+         "recommends": {
+            "PostgreSQL": "9.5.21"
+         }
+      }
+   },
+   "provides": {
+     "pg_queryid": {
+         "abstract": "rewrites SQL statement",
+         "file": "pg_query_rewrite.c",
+         "docfile": "README.md",
+         "version": "0.0.1"
+      }
+   },
+   "resources": {
+      "bugtracker": {
+         "web": "http://github.com/pierreforstmann/pg_query_rewrite/issues"
+      },
+      "repository": {
+        "url":  "https://github.com/pierreforstmann/pg_query_rewrite.git",
+        "web":  "https://github.com/pierreforstmann/pg_query_rewrite",
+        "type": "git"
+      }
+   },
+   "generated_by": "Pierre Forstmann",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+   },
+   "tags": [
+      "performance",
+      "rewrite",
+      "translate" 
+   ]
+}
