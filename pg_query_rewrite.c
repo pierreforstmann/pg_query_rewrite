@@ -18,33 +18,162 @@
 #include "access/xact.h"
 #include "parser/parse_node.h"
 #include "parser/analyze.h"
+#include "parser/parser.h"
 #include "tcop/tcopprot.h"
 #include "tcop/utility.h"
 #include "utils/guc.h"
 #include "utils/snapmgr.h"
+#include "utils/memutils.h"
+#if PG_VERSION_NUM <= 90600
+#include "storage/lwlock.h"
+#endif
 #include "pgstat.h"
+#include "storage/ipc.h"
+#include "storage/spin.h"
+#include "miscadmin.h"
+#include "nodes/extensible.h"
+#include "nodes/pathnodes.h"
+#include "nodes/plannodes.h"
+#include "utils/datum.h"
 
 PG_MODULE_MAGIC;
 
 static	bool 	pgqr_enabled = false;
-static	const 	char	*query_text;
-
-static	ParseState *new_static_pstate;
-static  Query	  *new_static_query;  
 
 static char	*pgqr_source_stmt = NULL;
 static char	*pgqr_destination_stmt = NULL;
 
+static	ParseState 	*new_static_pstate = NULL;
+static 	Query		*new_static_query = NULL;  
+static	List		*source_stmt_raw_parsetree_list = NULL;
+static	bool		backend_init = false;
+
 /* Saved hook values in case of unload */
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+
+
+/*
+ * Global shared state
+ * currently *not* used.
+ */
+typedef struct pgqrSharedState
+{
+	LWLock 		*lock;
+	bool		init;
+} pgqrSharedState;
+
+/* Links to shared memory state */
+static pgqrSharedState *pgqr= NULL;
 
 /*---- Function declarations ----*/
 
 void		_PG_init(void);
 void		_PG_fini(void);
 
+static 	void 	pgqr_shmem_startup(void);
+static 	void 	pgqr_shmem_shutdown(int code, Datum arg);
+
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query);
 static	void	pgqr_reanalyze(const char *new_query_string);
+
+/*
+ *  Estimate shared memory space needed.
+ * 
+ */
+static Size
+pgqr_memsize(void)
+{
+	Size		size;
+
+	size = MAXALIGN(sizeof(pgqrSharedState));
+
+	return size;
+}
+
+
+/*
+ *  shmem_startup hook: allocate or attach to shared memory.
+ *  
+ */
+static void
+pgqr_shmem_startup(void)
+{
+	bool		found;
+
+	elog(DEBUG5, "pg_query_rewrite: pgqr_shmem_startup: entry");
+
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	/* reset in case this is a restart within the postmaster */
+	pgqr = NULL;
+
+
+	/*
+ 	 * Create or attach to the shared memory state
+ 	 */
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+
+	pgqr = ShmemInitStruct("pg_query_rewrite",
+			        sizeof(pgqrSharedState),
+			        &found);
+
+	if (!found)
+	{
+		/* First time through ... */
+#if PG_VERSION_NUM <= 90600
+		RequestAddinLWLocks(1);
+		pgqr->lock = LWLockAssign();
+#else
+		pgqr->lock = &(GetNamedLWLockTranche("pg_query_rewrite"))->lock;
+#endif
+		pgqr->init = false;	
+	}
+
+	LWLockRelease(AddinShmemInitLock);
+
+	/*
+ 	 *  If we're in the postmaster (or a standalone backend...), set up a shmem
+ 	 *  exit hook (no current need ???) 
+ 	 */ 
+        if (!IsUnderPostmaster)
+		on_shmem_exit(pgqr_shmem_shutdown, (Datum) 0);
+
+	/*
+    	 * Done if some other process already completed our initialization.
+    	 */
+	elog(DEBUG5, "pg_query_rewrite: pgqr_shmem_startup: exit");
+	if (found)
+		return;
+
+
+}
+
+/*
+ *  
+ *     shmem_shutdown hook
+ *       
+ *     Note: we don't bother with acquiring lock, because there should be no
+ *     other processes running when this is called.
+ */
+static void
+pgqr_shmem_shutdown(int code, Datum arg)
+{
+	elog(DEBUG5, "pg_query_rewrite: pgqr_shmem_shutdown: entry");
+
+	/* Don't do anything during a crash. */
+	if (code)
+		return;
+
+	/* Safety check ... shouldn't get here unless shmem is set up. */
+	if (!pgqr)
+		return;
+	
+	/* currently: no action */
+
+	elog(DEBUG5, "pg_query_rewrite: pgqr_shmem_shutdown: exit");
+}
 
 
 /*
@@ -81,9 +210,25 @@ _PG_init(void)
 
 	if (pgqr_enabled)
 	{
-		ereport(LOG, (errmsg("pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled")));
+
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled");
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.source=%s", pgqr_source_stmt);
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.destination=%s",  pgqr_destination_stmt);
+		/*
+ 		 *  Request additional shared resources.  (These are no-ops if we're not in
+ 		 *  the postmaster process.)  We'll allocate or attach to the shared
+ 		 *   resources in pgqr_shmem_startup().
+ 		 */ 
+		RequestAddinShmemSpace(pgqr_memsize());
+#if PG_VERSION_NUM >= 90600
+		RequestNamedLWLockTranche("pg_query_rewrite", 1);
+#endif
+
+		prev_shmem_startup_hook = shmem_startup_hook;
+		shmem_startup_hook = pgqr_shmem_startup;
 		prev_post_parse_analyze_hook = post_parse_analyze_hook;
 		post_parse_analyze_hook = pgqr_analyze;
+
 	}
 	else
 		ereport(LOG, (errmsg("pg_query_rewrite:_PG_init(): pg_query_rewrite is not enabled")));
@@ -99,15 +244,25 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
-	
+	shmem_startup_hook = prev_shmem_startup_hook;	
 	post_parse_analyze_hook = prev_post_parse_analyze_hook;
 }
 
-static bool pgqr_to_rewrite(const char *source) 
+/*
+ * check if the current query needs to be rewritten:
+ * returns true if must be rewritten, otherwise false.
+ */
+static bool pgqr_check_rewrite(const char *current_query_source) 
 {
-	if (strcmp(source, pgqr_source_stmt) == 0)
+
+	List *raw_parsetree_list;
+	
+	raw_parsetree_list = raw_parser(current_query_source);
+	
+	if (equal(raw_parsetree_list, 
+        	source_stmt_raw_parsetree_list))
 		return true;
-	else
+	 else
 		return false;
 }
 
@@ -243,21 +398,45 @@ static void pgqr_reanalyze(const char *new_query_string)
 
 static void pgqr_analyze(ParseState *pstate, Query *query)
 {
+	MemoryContext oldctx;
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: entry");
 	if (pgqr_enabled)
 	{
-		query_text = pstate->p_sourcetext;
-		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
-		if (pgqr_to_rewrite(query_text))
+
+		if (backend_init == false)
 		{
+			/* parse once pg_query_rewrite.source 
+ 			 * to make query comparison 
+ 			 * with "equal" routine 
+ 			 * and cache it in backend private memory
+ 			 */
+	
+			oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+		 	source_stmt_raw_parsetree_list = raw_parser(pgqr_source_stmt);		
+			MemoryContextSwitchTo(oldctx);
+			backend_init = true;	
+			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: init done for pgqr_source_stmt=%s",
+				     pgqr_source_stmt);
+		}
+		/* pstate->p_sourcetext is the current query text */	
+		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
+		if (pgqr_check_rewrite(pstate->p_sourcetext))
+		{
+			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=true", 
+                                     pstate->p_sourcetext);
+			/* 
+ 			** analyze destination statement 
+			*/
 			pgqr_reanalyze(pgqr_destination_stmt);
 			/* clone data */
 			pgqr_clone_ParseState(new_static_pstate, pstate);
-			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: pstate %s",
+			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",
                                     pstate->p_sourcetext);
 			pgqr_clone_Query(new_static_query, query);
-		}
+		} else
+			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
+                                    pstate->p_sourcetext);
 
 		/* no "standard_analyze" to call 
   		 * according to parse_analyze in analyze.c 
