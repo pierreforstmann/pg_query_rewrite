@@ -19,23 +19,23 @@ Extension must be loaded:
 At server level with `shared_preload_libraries` parameter: <br> 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
 And following SQL statement must be run: <br>
-`create extension pg_rewrite_query;`
+`create extension pg_query_rewrite;`
 
 This extension must be installed in each database where it is intented to be used. <br>
 
 ## Usage
 pg_query_rewrite has no GUC.<br>
-The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exist in the related database.<br>
+The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exists in the related database.<br>
 <br>
 Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
-# \d pg_rewrite_rule <br>
-                               Table "public.pg_rewrite_rule" <br>
-   Column    |  Type   | Collation | Nullable |                   Default                   <br>
--------------+---------+-----------+----------+---------------------------------------------<br>
- id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) <br>
- pattern     | text    |           | not null | <br>
- replacement | text    |           | not null | <br>
- enabled     | boolean |           | not null | <br>
+`# \d pg_rewrite_rule `<br>
+`                               Table "public.pg_rewrite_rule" `<br>
+`   Column    |  Type   | Collation | Nullable |                   Default                   `<br>
+`-------------+---------+-----------+----------+---------------------------------------------`<br>
+` id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) `<br>
+` pattern     | text    |           | not null | <br>`
+` replacement | text    |           | not null | <br>`
+` enabled     | boolean |           | not null | <br>`
 
 
 Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
@@ -51,13 +51,12 @@ In postgresql.conf:
 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
 
-In `pg_rewrite_rule`:
+In `pg_rewrite_rule` table:
 
-
-`# select * from pg_rewrite_rule;`
-` id |   pattern   | replacement | enabled `
-`----+-------------+-------------+---------`
-` 38 | select 1+1; | select 1+2; | t`
+`# select * from pg_rewrite_rule;` <br>
+` id |   pattern   | replacement | enabled ` <br>
+`----+-------------+-------------+---------` <br>
+` 38 | select 1+1; | select 1+2; | t`        <br>
 `(1 row)`
 
 With above setup:
