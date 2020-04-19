@@ -33,9 +33,9 @@ Query rewrite rules must be inserted in the table pg_query_rules which has the f
 `   Column    |  Type   | Collation | Nullable |                   Default                   `<br>
 `-------------+---------+-----------+----------+---------------------------------------------`<br>
 ` id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) `<br>
-` pattern     | text    |           | not null | <br>`
-` replacement | text    |           | not null | <br>`
-` enabled     | boolean |           | not null | <br>`
+` pattern     | text    |           | not null | `<br>
+` replacement | text    |           | not null | `<br>
+` enabled     | boolean |           | not null | `<br>
 
 
 Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
