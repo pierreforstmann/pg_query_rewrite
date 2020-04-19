@@ -29,7 +29,6 @@ The extension is enabled if the related libraries is loaded and the table `pg_re
 <br>
 Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
 <code>
-&nbsp
 # \d pg_rewrite_rule 
                                Table "public.pg_rewrite_rule" 
    Column    |  Type   | Collation | Nullable |                   Default                   
