@@ -23,20 +23,20 @@ And following SQL statement must be run: <br>
 
 This extension must be installed in each database where it is intented to be used. <br>
 
-## Usage
+# Usage
 pg_query_rewrite has no GUC.<br>
 The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exists in the related database.<br>
 <br>
-Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
+Query rewrite rules must be inserted in the table `pg_query_rule` which has the following structure: <br>
 ```
 # \d pg_rewrite_rule 
                                Table "public.pg_rewrite_rule" 
    Column    |  Type   | Collation | Nullable |                   Default                   
 -------------+---------+-----------+----------+---------------------------------------------
-id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) 
-pattern     | text    |           | not null | 
-replacement | text    |           | not null | 
-enabled     | boolean |           | not null | 
+ id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) 
+ pattern     | text    |           | not null | 
+ replacement | text    |           | not null | 
+ enabled     | boolean |           | not null | 
 ```
 
 Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
@@ -46,7 +46,7 @@ The query rewrites rules are cached in the backend private memory: if the rules 
 only new database session will take care of the new state of rules (whether a new rule is created, updated
 or deleted) - existing database session including the current one cannot take into account the updated rules.<br>
 
-# Example
+## Example
 
 In postgresql.conf:
 
