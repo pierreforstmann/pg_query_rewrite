@@ -38,15 +38,38 @@
 
 PG_MODULE_MAGIC;
 
-static	bool 	pgqr_enabled = false;
+/*
+ * maximum number of rules processed
+ * by the extension in backend private memory:
+ * currently hard-coded.
+ */
+#define	PGQR_MAX_RULES	10
 
-static char	*pgqr_source_stmt = NULL;
-static char	*pgqr_destination_stmt = NULL;
+static	bool 	pgqr_enabled = false;
+static	bool	backend_init = false;
+/*
+ * to avoid recursion in pgqr_analyze
+ * during backend initialization
+ */
+static	bool	backend_init_started = false;
+
+/*
+ * Private state: pg_rewrite_rule cache
+ * in backend private memory.
+ *
+ */
+typedef struct pgqrPrivateItem
+{
+	char	*source_stmt;
+	char	*dest_stmt;
+	List	*source_stmt_raw_parsetree_list;	
+} pgqrPrivateItem;
+
+static	pgqrPrivateItem	pgqrPrivateArray[PGQR_MAX_RULES];
 
 static	ParseState 	*new_static_pstate = NULL;
 static 	Query		*new_static_query = NULL;  
 static	List		*source_stmt_raw_parsetree_list = NULL;
-static	bool		backend_init = false;
 
 /* Saved hook values in case of unload */
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
@@ -184,36 +207,12 @@ _PG_init(void)
 {
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():entry");
 
-	/* get the configuration */
-	DefineCustomStringVariable("pg_query_rewrite.source",
-				   "source statement",
-			    	    NULL,
-				    &pgqr_source_stmt,
-				    NULL,
-			     	    PGC_SIGHUP,
-			            0,
-				    NULL,
-				    NULL,
-				    NULL);
-	DefineCustomStringVariable("pg_query_rewrite.destination",
-				   "destination statement",
-			    	    NULL,
-				    &pgqr_destination_stmt,
-				    NULL,
-			     	    PGC_SIGHUP,
-			            0,
-				    NULL,
-				    NULL,
-				    NULL);
-	if (pgqr_source_stmt != NULL && pgqr_destination_stmt != NULL)
-		pgqr_enabled = true;
-
+	pgqr_enabled = true;
+	
 	if (pgqr_enabled)
 	{
 
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled");
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.source=%s", pgqr_source_stmt);
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.destination=%s",  pgqr_destination_stmt);
 		/*
  		 *  Request additional shared resources.  (These are no-ops if we're not in
  		 *  the postmaster process.)  We'll allocate or attach to the shared
@@ -250,20 +249,28 @@ _PG_fini(void)
 
 /*
  * check if the current query needs to be rewritten:
- * returns true if must be rewritten, otherwise false.
+ * returns true if must be rewritten, otherwise false;
+ * array_index is the position of the equivalent query
+ * in pgqrPrivateArray.
  */
-static bool pgqr_check_rewrite(const char *current_query_source) 
+static bool pgqr_check_rewrite(const char *current_query_source, int *array_index) 
 {
 
-	List *raw_parsetree_list;
-	
+	List 	*raw_parsetree_list;
+	int	i;
+
+	*array_index = PGQR_MAX_RULES;	
 	raw_parsetree_list = raw_parser(current_query_source);
-	
-	if (equal(raw_parsetree_list, 
-        	source_stmt_raw_parsetree_list))
-		return true;
-	 else
-		return false;
+
+	for (i = 0 ; i < PGQR_MAX_RULES; i++)	
+		if (equal(raw_parsetree_list, 
+        		pgqrPrivateArray[i].source_stmt_raw_parsetree_list))
+		{
+			*array_index = i;
+			return true;
+		}
+
+	return false;
 }
 
 static void pgqr_clone_Query(Query *source, Query *target)
@@ -379,7 +386,7 @@ static void pgqr_reanalyze(const char *new_query_string)
 	{
 		ereport(ERROR, 
                         (errmsg 
-                         ("pg_query_rewrite: cannot rewrite multiple to commands: %s", 
+                         ("pg_query_rewrite: cannot rewrite multiple commands: %s", 
                           new_query_string)));
 	}
 
@@ -392,43 +399,114 @@ static void pgqr_reanalyze(const char *new_query_string)
 }
 /*
  *
- * pqqr_analyze
+ * pqqr_analyze: main extension routine
  *
  */
 
 static void pgqr_analyze(ParseState *pstate, Query *query)
 {
-	MemoryContext oldctx;
+	StringInfoData 	buf_select;
+	int		spi_return_code;
+	int		number_of_rows;
+
+	int		i;
+	char		*source_stmt_val = NULL;
+	char		*dest_stmt_val = NULL;
+	MemoryContext 	oldctx;
+	
+	int		array_index;
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: entry");
 	if (pgqr_enabled)
-	{
+ 	{	
 
-		if (backend_init == false)
+		if (backend_init == false && backend_init_started == false)
 		{
-			/* parse once pg_query_rewrite.source 
- 			 * to make query comparison 
+			/* parse once pg_query_rule.pattern 
+ 			 * to be able to make query comparison 
  			 * with "equal" routine 
  			 * and cache it in backend private memory
  			 */
+
+			backend_init_started = true;
+			initStringInfo(&buf_select);
+					appendStringInfo(&buf_select,
+					"SELECT id, pattern, replacement "
+					"FROM pg_rewrite_rule "
+      					"WHERE enabled = true "
+					"ORDER BY id"
+					);
+			/* transaction already started in backend */
+			SPI_connect();
+			PushActiveSnapshot(GetTransactionSnapshot());
+			pgstat_report_activity(STATE_RUNNING, buf_select.data);						
+
+			spi_return_code = SPI_execute(buf_select.data, false, 0);
+			if (spi_return_code != SPI_OK_SELECT)
+			elog(FATAL, "cannot select from pg_query_rewrite: error code %d",
+				     spi_return_code);
+			number_of_rows = SPI_processed;
+			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: number_of_rows=%d",
+				    number_of_rows);
 	
+			i = 0;
 			oldctx = MemoryContextSwitchTo(CacheMemoryContext);
-		 	source_stmt_raw_parsetree_list = raw_parser(pgqr_source_stmt);		
+			for (i = 0; i < number_of_rows; i++)
+			{
+				bool 	val_is_null;
+				int32	rule_id;
+
+				rule_id = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[i],
+							  SPI_tuptable->tupdesc,
+							  1, &val_is_null));
+				if (! val_is_null)
+				{
+					source_stmt_val = SPI_getvalue(SPI_tuptable->vals[i],
+							    SPI_tuptable->tupdesc,
+							    2);
+					dest_stmt_val = SPI_getvalue(SPI_tuptable->vals[i],
+                                                            SPI_tuptable->tupdesc,
+                                                            3);
+					
+				}
+				else 
+				{
+					elog(WARNING, "pg_query_rewrite : id is NULL");
+				}
+			
+				if ( i > PGQR_MAX_RULES )
+				{
+					elog(FATAL, "pg_query_rewrite: pgqr_analyze: too many rules");
+				}
+
+		 		source_stmt_raw_parsetree_list = raw_parser(source_stmt_val);		
+				pgqrPrivateArray[i].source_stmt = source_stmt_val;
+				pgqrPrivateArray[i].dest_stmt = dest_stmt_val;
+				pgqrPrivateArray[i].source_stmt_raw_parsetree_list = 
+						source_stmt_raw_parsetree_list;
+				elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: processed rule_id=%d",
+				    	    rule_id);
+			}
 			MemoryContextSwitchTo(oldctx);
+
 			backend_init = true;	
-			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: init done for pgqr_source_stmt=%s",
-				     pgqr_source_stmt);
+			SPI_finish();
+			PopActiveSnapshot();
+			pgstat_report_stat(false);
+			pgstat_report_activity(STATE_IDLE, NULL);
+
+			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: init done for %d rules", number_of_rows);
 		}
 		/* pstate->p_sourcetext is the current query text */	
 		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
-		if (pgqr_check_rewrite(pstate->p_sourcetext))
+		if (pgqr_check_rewrite(pstate->p_sourcetext, &array_index))
 		{
 			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=true", 
                                      pstate->p_sourcetext);
 			/* 
  			** analyze destination statement 
 			*/
-			pgqr_reanalyze(pgqr_destination_stmt);
+			pgqr_reanalyze(pgqrPrivateArray[array_index].dest_stmt);
 			/* clone data */
 			pgqr_clone_ParseState(new_static_pstate, pstate);
 			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",

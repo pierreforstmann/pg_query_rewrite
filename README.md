@@ -14,40 +14,62 @@ This module can be built using the standard PGXS infrastructure. For this to wor
 
 ## PostgreSQL setup
 
-Extension can be loaded:
+Extension must be loaded:
 
 At server level with `shared_preload_libraries` parameter: <br> 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
+And following SQL statement must be run: <br>
+`create extension pg_rewrite_query;`
 
+This extension must be installed in each database where it is intented to be used. <br>
 
 ## Usage
-pg_query_rewrite has 2 specific GUC: <br>
-`pg_query_rewrite.source`: source SQL statement <br>
-`pg_query_rewrite.destination`: destination SQL statement <br>
-Only 1 single statement can be defined. The SQL statement must exactly match the source statement (lowercase/uppercase and number of space characters).
+pg_query_rewrite has no GUC.<br>
+The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exist in the related database.<br>
+<br>
+Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
+# \d pg_rewrite_rule <br>
+                               Table "public.pg_rewrite_rule" <br>
+   Column    |  Type   | Collation | Nullable |                   Default                   <br>
+-------------+---------+-----------+----------+---------------------------------------------<br>
+ id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) <br>
+ pattern     | text    |           | not null | <br>
+ replacement | text    |           | not null | <br>
+ enabled     | boolean |           | not null | <br>
 
-## Example
+
+Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
+Extension behaviour is not defined it the number of rows in pg_rewrite_rule exceeds this maximum. <br>
+<br>
+The query rewrites rules are cached in the backend private memory: if the rules are updated in the current database session,
+only new database session will take care of the new state of rules (whether a new rule is created, updated
+or deleted) - existing database session including the current one cannot take into account the updated rules.<br>
+
+# Example
 
 In postgresql.conf:
 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
-`pg_query_rewrite.source='select 1+1;'` <br>
-`pg_query_rewrite.destination='select 1+2;'` <br>
 
-With this setup:
+In `pg_rewrite_rule`:
 
-`pierre=# select 1+1;` <br>
+
+`# select * from pg_rewrite_rule;`
+` id |   pattern   | replacement | enabled `
+`----+-------------+-------------+---------`
+` 38 | select 1+1; | select 1+2; | t`
+`(1 row)`
+
+With above setup:
+
+`# select 1+1;` <br>
 ` ?column? ` <br>
 `----------` <br>
 `        3`  <br>
 `(1 row)`    <br>
 
-`pierre=# select 1 + 1;` <br>
+`# select (1 + 1);` <br>
 ` ?column? ` <br>
 `----------` <br>
-`        2`  <br>
+`        3`  <br>
 `(1 row)`    <br>
-
-
-
-
