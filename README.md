@@ -28,7 +28,7 @@ pg_query_rewrite has no GUC.<br>
 The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exists in the related database.<br>
 <br>
 Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
-<code>
+```
 # \d pg_rewrite_rule 
                                Table "public.pg_rewrite_rule" 
    Column    |  Type   | Collation | Nullable |                   Default                   
@@ -37,7 +37,7 @@ id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq':
 pattern     | text    |           | not null | 
 replacement | text    |           | not null | 
 enabled     | boolean |           | not null | 
-</code>
+```
 
 Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
 Extension behaviour is not defined it the number of rows in pg_rewrite_rule exceeds this maximum. <br>
@@ -54,22 +54,28 @@ In postgresql.conf:
 
 In `pg_rewrite_rule` table:
 
-`# select * from pg_rewrite_rule;` <br>
-` id |   pattern   | replacement | enabled ` <br>
-`----+-------------+-------------+---------` <br>
-` 38 | select 1+1; | select 1+2; | t`        <br>
-`(1 row)`
+```
+# select * from pg_rewrite_rule;` 
+ id |   pattern   | replacement | enabled  
+----+-------------+-------------+---------
+ 38 | select 1+1; | select 1+2; | t      
+(1 row)
+```
 
 With above setup:
 
-`# select 1+1;` <br>
-` ?column? ` <br>
-`----------` <br>
-`        3`  <br>
-`(1 row)`    <br>
+```
+# select 1+1;
+ ?column? `
+----------
+        3
+(1 row)
+```
 
-`# select (1 + 1);` <br>
-` ?column? ` <br>
-`----------` <br>
-`        3`  <br>
-`(1 row)`    <br>
+```
+# select (1 + 1);
+ ?column? 
+----------
+        3
+(1 row)   
+```
