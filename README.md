@@ -28,15 +28,17 @@ pg_query_rewrite has no GUC.<br>
 The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exists in the related database.<br>
 <br>
 Query rewrite rules must be inserted in the table pg_query_rules which has the following structure: <br>
-`# \d pg_rewrite_rule `<br>
-`                               Table "public.pg_rewrite_rule" `<br>
-`   Column    |  Type   | Collation | Nullable |                   Default                   `<br>
-`-------------+---------+-----------+----------+---------------------------------------------`<br>
-` id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) `<br>
-` pattern     | text    |           | not null | `<br>
-` replacement | text    |           | not null | `<br>
-` enabled     | boolean |           | not null | `<br>
-
+<code>
+&nbsp
+# \d pg_rewrite_rule 
+                               Table "public.pg_rewrite_rule" 
+   Column    |  Type   | Collation | Nullable |                   Default                   
+-------------+---------+-----------+----------+---------------------------------------------
+id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) 
+pattern     | text    |           | not null | 
+replacement | text    |           | not null | 
+enabled     | boolean |           | not null | 
+</code>
 
 Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
 Extension behaviour is not defined it the number of rows in pg_rewrite_rule exceeds this maximum. <br>
