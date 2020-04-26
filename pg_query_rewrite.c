@@ -40,10 +40,13 @@ PG_MODULE_MAGIC;
 
 /*
  * maximum number of rules processed
- * by the extension in backend private memory:
- * currently hard-coded.
+ * by the extension defined as GUC
+ * and checked at run-time
+ * with trigger on pg_rewrite_rules
+ * table with trigger 
  */
-#define	PGQR_MAX_RULES	10
+
+static	int	pgqr_max_rules_number = 0;
 
 static	bool 	pgqr_enabled = false;
 static	bool	backend_init = false;
@@ -65,7 +68,7 @@ typedef struct pgqrPrivateItem
 	List	*source_stmt_raw_parsetree_list;	
 } pgqrPrivateItem;
 
-static	pgqrPrivateItem	pgqrPrivateArray[PGQR_MAX_RULES];
+static	pgqrPrivateItem	*pgqrPrivateArray;
 
 static	ParseState 	*new_static_pstate = NULL;
 static 	Query		*new_static_query = NULL;  
@@ -78,12 +81,12 @@ static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 
 /*
  * Global shared state
- * currently *not* used.
  */
 typedef struct pgqrSharedState
 {
 	LWLock 		*lock;
 	bool		init;
+	int		max_rules;
 } pgqrSharedState;
 
 /* Links to shared memory state */
@@ -207,12 +210,36 @@ _PG_init(void)
 {
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():entry");
 
-	pgqr_enabled = true;
+	if (!process_shared_preload_libraries_in_progress)
+		return;
+
+	/* get the configuration */
+	DefineCustomIntVariable("pg_query_rewrite.max_rules",
+				"Maximum of number of rules.",
+				NULL,
+				&pgqr_max_rules_number,
+				0,	
+				0,
+				50,
+				PGC_POSTMASTER,	
+				0,
+				NULL,
+				NULL,
+				NULL);
+	
+	if (pgqr_max_rules_number == 0)
+	{
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.max_rules not defined");
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite it not enabled");
+	}
+	else	pgqr_enabled = true;
+	
 	
 	if (pgqr_enabled)
 	{
 
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled");
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled with %d rules", 
+                          pgqr_max_rules_number);
 		/*
  		 *  Request additional shared resources.  (These are no-ops if we're not in
  		 *  the postmaster process.)  We'll allocate or attach to the shared
@@ -229,9 +256,6 @@ _PG_init(void)
 		post_parse_analyze_hook = pgqr_analyze;
 
 	}
-	else
-		ereport(LOG, (errmsg("pg_query_rewrite:_PG_init(): pg_query_rewrite is not enabled")));
-
 
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():exit");
 }
@@ -259,10 +283,13 @@ static bool pgqr_check_rewrite(const char *current_query_source, int *array_inde
 	List 	*raw_parsetree_list;
 	int	i;
 
-	*array_index = PGQR_MAX_RULES;	
+	*array_index = pgqr_max_rules_number;	
+	if (backend_init == false)
+		return false;
+
 	raw_parsetree_list = raw_parser(current_query_source);
 
-	for (i = 0 ; i < PGQR_MAX_RULES; i++)	
+	for (i = 0 ; i < pgqr_max_rules_number; i++)	
 		if (equal(raw_parsetree_list, 
         		pgqrPrivateArray[i].source_stmt_raw_parsetree_list))
 		{
@@ -451,6 +478,12 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 	
 			i = 0;
 			oldctx = MemoryContextSwitchTo(CacheMemoryContext);
+			pgqrPrivateArray = (pgqrPrivateItem *)
+                                            palloc(sizeof(pgqrPrivateItem)*pgqr_max_rules_number);
+			if (pgqrPrivateArray == NULL)
+				elog(FATAL, "pg_query_rewrite: palloc failed");
+			
+
 			for (i = 0; i < number_of_rows; i++)
 			{
 				bool 	val_is_null;
@@ -474,7 +507,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 					elog(WARNING, "pg_query_rewrite : id is NULL");
 				}
 			
-				if ( i > PGQR_MAX_RULES )
+				if ( i > pgqr_max_rules_number )
 				{
 					elog(FATAL, "pg_query_rewrite: pgqr_analyze: too many rules");
 				}
