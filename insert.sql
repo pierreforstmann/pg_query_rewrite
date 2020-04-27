@@ -1,4 +1,14 @@
 truncate table pg_rewrite_rule;
 insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 1+1;','select 1+2;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 10;','select 11;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select * from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select x from t;','select y from t;',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 1 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 2 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 3 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 4 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 5 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 6 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 7 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 8 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 9 from dual;', 'select ''dummy'';',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 10 from dual;', 'select ''dummy'';',true);
+select count(*) from pg_rewrite_rule;

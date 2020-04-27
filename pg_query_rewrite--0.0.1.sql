@@ -2,6 +2,7 @@
 drop table pg_rewrite_rule cascade;
 drop function pg_rewrite_query_check_rules_number;
 --
+--
 create table pg_rewrite_rule(
  id 	 	serial,
  pattern 	text not null,
@@ -30,5 +31,17 @@ create trigger pg_rewrite_rule_trigger
 after insert on pg_rewrite_rule
 execute procedure pg_rewrite_query_check_rules_number();
 --
-
-
+--
+drop function if exists pgqr_signal();
+--
+CREATE FUNCTION pgqr_signal() RETURNS int 
+ AS 'pg_query_rewrite.so', 'pgqr_signal'
+ LANGUAGE C STRICT;
+--
+drop function if exists pgqr_load_rules();
+--
+CREATE FUNCTION pgqr_load_rules() RETURNS int 
+ AS 'pg_query_rewrite.so', 'pgqr_load_rules'
+ LANGUAGE C STRICT;
+--
+\q
