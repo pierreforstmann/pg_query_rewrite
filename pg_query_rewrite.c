@@ -62,6 +62,11 @@ static	bool	backend_initialized = false;
 static	bool	pgqr_load_cache_started=false;
 
 /*
+ * for pg_stat_statements assertion 
+ */
+static	bool	statement_rewritten = false;
+
+/*
  * Private state: 
  * pg_rewrite_rule cache in backend private memory.
  *
@@ -82,6 +87,7 @@ static	List		*source_stmt_raw_parsetree_list = NULL;
 /* Saved hook values in case of unload */
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+static ExecutorStart_hook_type prev_executor_start_hook = NULL;
 
 
 /*
@@ -126,6 +132,9 @@ static 	void 	pgqr_shmem_shutdown(int code, Datum arg);
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query);
 static	void	pgqr_reanalyze(const char *new_query_string);
 static	void	pgqr_exit(void);
+
+static void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
+
 
 /*
  *  Estimate shared memory space needed.
@@ -303,6 +312,8 @@ _PG_init(void)
 		shmem_startup_hook = pgqr_shmem_startup;
 		prev_post_parse_analyze_hook = post_parse_analyze_hook;
 		post_parse_analyze_hook = pgqr_analyze;
+		prev_executor_start_hook = ExecutorStart_hook;
+	 	ExecutorStart_hook = pgqr_exec;	
 
 	}
 
@@ -318,6 +329,7 @@ _PG_fini(void)
 {
 	shmem_startup_hook = prev_shmem_startup_hook;	
 	post_parse_analyze_hook = prev_post_parse_analyze_hook;
+	ExecutorStart_hook = prev_executor_start_hook;
 }
 
 
@@ -824,6 +836,8 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 	int		array_index;
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: entry");
+	
+	statement_rewritten = false;
 	if (pgqr_enabled)
  	{	
 
@@ -850,6 +864,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",
                                     pstate->p_sourcetext);
 			pgqr_clone_Query(new_static_query, query);
+			statement_rewritten = true;
 		} else
 			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
                                     pstate->p_sourcetext);
@@ -862,6 +877,41 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 	 }
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: exit");
+}
+
+
+/*
+ * pgqr_exec
+ *
+ */
+static void pgqr_exec(QueryDesc *queryDesc, int eflags)
+{
+
+	int stmt_loc;
+	int stmt_len;
+	const char *src;
+
+	if (pgqr_enabled == true && statement_rewritten == true)
+	{
+		src = queryDesc->sourceText;
+		stmt_loc = queryDesc->plannedstmt->stmt_location;
+		stmt_len = queryDesc->plannedstmt->stmt_len;
+
+		elog(DEBUG1, "pg_query_rewrite: pgqr_exec: src=%s", src);
+		elog(DEBUG1, "pg_query_rewrite: pgqr_exec: stmt_loc=%d", stmt_loc);
+		elog(DEBUG1, "pg_query_rewrite: pgqr_exec: stmt_len=%d", stmt_len);
+
+		/*
+	 	 * set stmt_location to -1 to avoid assertion failure in pgss_store:
+ 		 * Assert(query_len <= strlen(query)
+	 	 */
+		queryDesc->plannedstmt->stmt_location = -1;
+		stmt_loc = queryDesc->plannedstmt->stmt_location;
+		elog(DEBUG1, "pg_query_rewrite: pgqr_exec: stmt_loc=%d", stmt_loc);
+	}
+
+	if (prev_executor_start_hook)
+                (*prev_executor_start_hook)(queryDesc, eflags);
 }
 
 /*
