@@ -40,8 +40,21 @@ CREATE FUNCTION pgqr_signal() RETURNS int
 --
 drop function if exists pgqr_load_rules();
 --
-CREATE FUNCTION pgqr_load_rules() RETURNS int 
+CREATE FUNCTION pgqr_load_rules() RETURNS BOOLEAN 
  AS 'pg_query_rewrite.so', 'pgqr_load_rules'
  LANGUAGE C STRICT;
 --
+drop function if exists pgqr_log_proc_array();
+--
+CREATE FUNCTION pgqr_log_proc_array() RETURNS BOOLEAN 
+ AS 'pg_query_rewrite.so', 'pgqr_log_proc_array'
+ LANGUAGE C STRICT;
+--
+drop function if exists pgqr_log_rules_cache();
+--
+CREATE FUNCTION pgqr_log_rules_cache() RETURNS BOOLEAN 
+ AS 'pg_query_rewrite.so', 'pgqr_log_rules_cache'
+ LANGUAGE C STRICT;
+--
+\q
 \q
