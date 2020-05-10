@@ -1,0 +1,83 @@
+drop extension if exists pg_query_rewrite;
+NOTICE:  extension "pg_query_rewrite" does not exist, skipping
+--
+create extension pg_query_rewrite;
+--
+drop table if exists t;
+NOTICE:  table "t" does not exist, skipping
+create table t(x int, y int);
+--
+insert into t values(1,2);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 10;','select 11;',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 1+1;','select 1+2;',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('select x from t;','select x,y from t;',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('delete from t;','delete from t where 1=0;',true);
+insert into pg_rewrite_rule(pattern, replacement, enabled) values('update t set x=y;','update t set x=y where 1=0;',true);
+select count(*) from pg_rewrite_rule;
+ count 
+-------
+     5
+(1 row)
+
+--
+select pgqr_load_rules();
+ pgqr_load_rules 
+-----------------
+ t
+(1 row)
+
+--
+select 10;
+ ?column? 
+----------
+       11
+(1 row)
+
+select 1+1;
+ ?column? 
+----------
+        3
+(1 row)
+
+select ((1)+(1));
+ ?column? 
+----------
+        3
+(1 row)
+
+select x from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+begin;
+delete from t;
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+rollback;
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+begin;
+update t set x=y;
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+rollback;
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+

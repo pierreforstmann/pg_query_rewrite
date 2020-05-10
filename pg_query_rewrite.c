@@ -106,6 +106,7 @@ typedef struct pgqrSharedState
 	LWLock 		*lock;
 	bool		init;
 	int		max_rules;
+	bool		extension_created;
 	int		max_backend_no;
 	int		current_backend_no;
 	pgqrSharedItem	*proc_array;
@@ -197,6 +198,7 @@ pgqr_shmem_startup(void)
 		pgqr->lock = &(GetNamedLWLockTranche("pg_query_rewrite"))->lock;
 #endif
 		pgqr->init = false;	
+		pgqr->extension_created = false;
 
 		max_conn_string = GetConfigOption("max_connections", false, false);	
 		max_conn = pg_atoi(max_conn_string, 1, 0);
@@ -284,11 +286,11 @@ _PG_init(void)
 				NULL,
 				NULL,
 				NULL);
-	
+
 	if (pgqr_max_rules_number == 0)
 	{
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.max_rules not defined");
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite it not enabled");
+		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite not enabled");
 	}
 	else	pgqr_enabled = true;
 	
@@ -332,6 +334,21 @@ _PG_fini(void)
 	ExecutorStart_hook = prev_executor_start_hook;
 }
 
+
+/*
+ * pgqr_write_extension_flag
+ */
+PG_FUNCTION_INFO_V1(pgqr_write_extension_flag);
+
+Datum
+pgqr_write_extension_flag(PG_FUNCTION_ARGS)
+{
+	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
+	pgqr->extension_created = true;
+	LWLockRelease(pgqr->lock);
+	PG_RETURN_BOOL(true);
+
+}
 
 /*
  * pgqr_add_backend_in_proc_array
@@ -807,9 +824,13 @@ static void pgqr_load_cache(bool first_run)
 	backend_initialized = true;	
 	SPI_finish();
 	PopActiveSnapshot();
-	pgstat_report_stat(false);
-	pgstat_report_activity(STATE_IDLE, NULL);
-
+	/*
+ 	 * assertion failure Assert(entry->trans == NULL);
+	 * if called during CREATE EXTENSION step.
+	 *
+	 * pgstat_report_stat(false);
+	 * pgstat_report_activity(STATE_IDLE, NULL);
+	*/
 
 	if (first_run == true)
 	{
@@ -836,9 +857,9 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 	int		array_index;
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: entry");
-	
+
 	statement_rewritten = false;
-	if (pgqr_enabled)
+	if (pgqr_enabled && pgqr->extension_created)
  	{	
 
 		if (backend_initialized == false && pgqr_load_cache_started == false)
@@ -912,6 +933,7 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 
 	if (prev_executor_start_hook)
                 (*prev_executor_start_hook)(queryDesc, eflags);
+	else	standard_ExecutorStart(queryDesc, eflags);
 }
 
 /*

@@ -1,6 +1,10 @@
--- \echo Use "CREATE EXTENSION pg_query_rewrite" to load this file . \quit
-drop table pg_rewrite_rule cascade;
-drop function pg_rewrite_query_check_rules_number;
+drop table if exists pg_rewrite_rule cascade;
+drop function if exists pg_rewrite_query_check_rules_number;
+drop function if exists pgqr_signal();
+drop function if exists pgqr_load_rules();
+drop function if exists pgqr_log_proc_array();
+drop function if exists pgqr_log_rules_cache();
+drop function if exists pgqr_write_extension_flag();
 --
 --
 create table pg_rewrite_rule(
@@ -20,7 +24,7 @@ begin
  select count(*) into l_rules_count from pg_rewrite_rule;
  if l_rules_count >  l_max_rules_number
  then
-  raise exception 'Too many rules';
+  raise exception 'Too many rules (max_rules=%)', l_max_rules_number;
  end if;
 return null;
 end;
@@ -31,30 +35,25 @@ create trigger pg_rewrite_rule_trigger
 after insert on pg_rewrite_rule
 execute procedure pg_rewrite_query_check_rules_number();
 --
+CREATE FUNCTION pgqr_write_extension_flag() RETURNS BOOLEAN 
+ AS 'pg_query_rewrite.so', 'pgqr_write_extension_flag'
+ LANGUAGE C STRICT;
 --
-drop function if exists pgqr_signal();
+select pgqr_write_extension_flag();
 --
 CREATE FUNCTION pgqr_signal() RETURNS int 
  AS 'pg_query_rewrite.so', 'pgqr_signal'
  LANGUAGE C STRICT;
 --
-drop function if exists pgqr_load_rules();
---
 CREATE FUNCTION pgqr_load_rules() RETURNS BOOLEAN 
  AS 'pg_query_rewrite.so', 'pgqr_load_rules'
  LANGUAGE C STRICT;
---
-drop function if exists pgqr_log_proc_array();
 --
 CREATE FUNCTION pgqr_log_proc_array() RETURNS BOOLEAN 
  AS 'pg_query_rewrite.so', 'pgqr_log_proc_array'
  LANGUAGE C STRICT;
 --
-drop function if exists pgqr_log_rules_cache();
---
 CREATE FUNCTION pgqr_log_rules_cache() RETURNS BOOLEAN 
  AS 'pg_query_rewrite.so', 'pgqr_log_rules_cache'
  LANGUAGE C STRICT;
 --
-\q
-\q
