@@ -4,7 +4,6 @@ drop function if exists pgqr_signal();
 drop function if exists pgqr_load_rules();
 drop function if exists pgqr_log_proc_array();
 drop function if exists pgqr_log_rules_cache();
-drop function if exists pgqr_write_extension_flag();
 --
 --
 create table pg_rewrite_rule(
@@ -34,12 +33,6 @@ language plpgsql;
 create trigger pg_rewrite_rule_trigger
 after insert on pg_rewrite_rule
 execute procedure pg_rewrite_query_check_rules_number();
---
-CREATE FUNCTION pgqr_write_extension_flag() RETURNS BOOLEAN 
- AS 'pg_query_rewrite.so', 'pgqr_write_extension_flag'
- LANGUAGE C STRICT;
---
-select pgqr_write_extension_flag();
 --
 CREATE FUNCTION pgqr_signal() RETURNS int 
  AS 'pg_query_rewrite.so', 'pgqr_signal'

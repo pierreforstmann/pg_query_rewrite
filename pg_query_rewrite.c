@@ -62,7 +62,7 @@ static	bool	backend_initialized = false;
 static	bool	pgqr_load_cache_started=false;
 /* 
  * true par default but set to false
- * in pg_load_private_cache PG_CATCH block
+ * in pg_load_cache PG_CATCH block
  */
 static	bool	pgqr_is_installed_in_current_db = true;
 
@@ -139,10 +139,6 @@ static	void	pgqr_reanalyze(const char *new_query_string);
 static	void	pgqr_exit(void);
 
 static void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
-
-static void	pgqr_write_extension_flag_internal(void);
-PG_FUNCTION_INFO_V1(pgqr_bgw_launch);
-PG_FUNCTION_INFO_V1(pgqr_bgw_main);
 
 /*
  *  Estimate shared memory space needed.
@@ -342,30 +338,6 @@ _PG_fini(void)
 	shmem_startup_hook = prev_shmem_startup_hook;	
 	post_parse_analyze_hook = prev_post_parse_analyze_hook;
 	ExecutorStart_hook = prev_executor_start_hook;
-}
-
-/*
- * pgqr_write_extension_flag_internal
- */
-
-void
-pgqr_write_extension_flag_internal(void)
-{
-	pgqr_is_installed_in_current_db = true;
-
-}
-
-/*
- * pgqr_write_extension_flag
- */
-PG_FUNCTION_INFO_V1(pgqr_write_extension_flag);
-
-Datum
-pgqr_write_extension_flag(PG_FUNCTION_ARGS)
-{
-	pgqr_write_extension_flag_internal();
-	PG_RETURN_BOOL(true);
-
 }
 
 /*
@@ -584,7 +556,9 @@ pgqr_load_rules(PG_FUNCTION_ARGS)
 		}
 	}
 	LWLockRelease(pgqr->lock);
-	
+
+	/* for backend that has just run CREATE EXTENSION */
+	pgqr_is_installed_in_current_db = true;	
 	PG_RETURN_BOOL(true);
 
 }
@@ -797,7 +771,7 @@ static void pgqr_load_cache(bool first_run)
 	PG_CATCH();
 	{
 		pgqr_is_installed_in_current_db = false;
-		elog(LOG,"pg_query_rewrite: pg_load_cache: SELECT error catched.");
+		elog(LOG,"pg_query_rewrite: pgqr_load_cache: SELECT error catched.");
 	}
 	PG_END_TRY();
 
@@ -894,7 +868,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
 
 	statement_rewritten = false;
 
-	if (pgqr_enabled && pgqr_is_installed_in_current_db)
+	if (pgqr_is_installed_in_current_db)
  	{	
 
 		if (backend_initialized == false && pgqr_load_cache_started == false)
@@ -1034,124 +1008,3 @@ pgqr_signal(PG_FUNCTION_ARGS)
 }
 
 
-/*
- * pgqr_bgw_launch:
- * dynamic launch needed to have target database
- *
- */
-Datum
-pgqr_bgw_launch(PG_FUNCTION_ARGS)
-{
-	 
-	BackgroundWorker worker;
-
-	memset(&worker, 0, sizeof(worker));
-	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
-			   	   BGWORKER_BACKEND_DATABASE_CONNECTION;
-	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
-	worker.bgw_restart_time = BGW_NEVER_RESTART;
-	sprintf(worker.bgw_library_name, "pg_query_rewrite");
-	sprintf(worker.bgw_function_name, "pgqr_bgw_main");
-	worker.bgw_notify_pid = 0;
-
-	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_query_rewrite_worker");
-#if PG_VERSION_NUM >= 110000
-	snprintf(worker.bgw_type, BGW_MAXLEN, "pg_query_rewrite_worker");
-#endif
-	worker.bgw_main_arg = CStringGetDatum(""); 
-
-	RegisterBackgroundWorker(&worker);
-	elog(LOG, "%s started", worker.bgw_name);
-	
-	PG_RETURN_BOOL(true);
-
-}
-
-
-/*
- * pgqr_bgw_main:
- *
- * check if pg_query_rewrite extension has been created.
- * This background worker is needed for a one time check in the chicken-egg case:
- * to avoid recursion when running SQL statement in system catalog in pgqr_analyze function.
- * There is also no way to run SQL in PG_init or in pgqr_shmem_startup functions.
- *
- */
-Datum
-pgqr_bgw_main(PG_FUNCTION_ARGS)
-{
-
-	 char		 *datname;
-	 StringInfoData  buf_select;
-         int             spi_return_code;
-         int             number_of_rows;	
-	 int		 rc;
-
-
-	datname = PG_GETARG_CSTRING(0);	
-
-	/*  no signal handler because no working loop */
-	BackgroundWorkerUnblockSignals();
-
-	/* Connect to our database */
-#if PG_VERSION_NUM >=110000
-	BackgroundWorkerInitializeConnection(datname, NULL, 0);
-#else
-	BackgroundWorkerInitializeConnection(datname, NULL);
-#endif
-	elog(LOG, "%s initialized", MyBgworkerEntry->bgw_name);
-
-
-	ResetLatch(MyLatch);
-#if PG_VERSION_NUM >= 100000
-	rc = WaitLatch(MyLatch,
-  		       WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-		       1000L,
-		       PG_WAIT_EXTENSION);
-#else
-	rc = WaitLatch(MyLatch,
-		       WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-		       1000L);
-#endif
-
-	/* emergency bailout if postmaster has died */
-	if (rc & WL_POSTMASTER_DEATH)
-		proc_exit(1);
-
-	CHECK_FOR_INTERRUPTS();
-
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-        SPI_connect();
-        PushActiveSnapshot(GetTransactionSnapshot());
-
-	initStringInfo(&buf_select);
-	appendStringInfo(&buf_select,
-			"SELECT extname "
-    			"FROM pg_extension "
-    			"WHERE extname = 'pg_query_rewrite' "
-      			 );
-	pgstat_report_activity(STATE_RUNNING, buf_select.data);
-
-        spi_return_code = SPI_execute(buf_select.data, false, 0);
-        if (spi_return_code != SPI_OK_SELECT)
-        	elog(FATAL, "cannot select from pgqr_bgw_main: error code %d",
-			     spi_return_code);
-        number_of_rows = SPI_processed;
-	elog(LOG, "pg_query_rewrite: pgqr_bgw_main: extension found count=%d",
-                  number_of_rows);
-        if (number_of_rows == 1)
-	{
-		pgqr_write_extension_flag_internal();
-	}
-
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
-	pgstat_report_stat(false);
-	pgstat_report_activity(STATE_IDLE, NULL);
-
-	proc_exit(0);
-
-
-}
