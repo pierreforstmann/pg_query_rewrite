@@ -33,7 +33,9 @@
 #include "storage/spin.h"
 #include "miscadmin.h"
 #include "nodes/extensible.h"
+#if PG_VERSION_NUM > 120000
 #include "nodes/pathnodes.h"
+#endif
 #include "nodes/plannodes.h"
 #include "utils/datum.h"
 #include "utils/builtins.h"
@@ -603,7 +605,9 @@ static void pgqr_clone_Query(Query *source, Query *target)
 	target->resultRelation = source->resultRelation;
 	target->hasAggs = source->hasAggs;
 	target->hasWindowFuncs = source->hasWindowFuncs;
+#if PG_VERSION_NUM > 100000 
 	target->hasTargetSRFs = source->hasTargetSRFs;
+#endif
 	target->hasSubLinks = source->hasSubLinks;
 	target->hasDistinctOn = source->hasDistinctOn;
 	target->hasRecursive = source->hasRecursive;
@@ -614,12 +618,15 @@ static void pgqr_clone_Query(Query *source, Query *target)
 	target->rtable = source->rtable;
 	target->jointree = source->jointree;
 	target->targetList = source->targetList;
+#if PG_VERSION_NUM > 100000 
 	target->override = source->override;
+#endif
 	target->onConflict = source->onConflict;
 	target->returningList = source->returningList;
-	target->groupClause= source->groupClause;
-	target->groupingSets= source->groupingSets;
-	target->havingQual= source->havingQual;
+	target->groupClause = source->groupClause;
+	target->groupingSets = source->groupingSets;
+	target->havingQual = source->havingQual;
+	target->windowClause = source->windowClause;
 	target->distinctClause= source->distinctClause;
 	target->sortClause= source->sortClause;
 	target->limitOffset= source->limitOffset;
@@ -627,8 +634,10 @@ static void pgqr_clone_Query(Query *source, Query *target)
 	target->rowMarks= source->rowMarks;
 	target->setOperations= source->setOperations;
 	target->constraintDeps= source->constraintDeps;
+#if PG_VERSION_NUM > 100000 
 	target->stmt_location=source->stmt_location;
 	target->stmt_len=source->stmt_len;
+#endif
 
 }
 
@@ -652,14 +661,20 @@ static void pgqr_clone_ParseState(ParseState *source, ParseState *target)
 	target->p_multiassign_exprs= source->p_multiassign_exprs;
 	target->p_locking_clause= source->p_locking_clause;
 	target->p_locked_from_parent= source->p_locked_from_parent;
+#if PG_VERSION_NUM > 100000 
 	target->p_resolve_unknowns= source->p_resolve_unknowns;
 	target->p_queryEnv= source->p_queryEnv;
+#endif
 	target->p_hasAggs = source->p_hasAggs;
 	target->p_hasWindowFuncs = source->p_hasWindowFuncs;
+#if PG_VERSION_NUM > 100000 
 	target->p_hasTargetSRFs= source->p_hasTargetSRFs;
+#endif
 	target->p_hasSubLinks= source->p_hasSubLinks;
 	target->p_hasModifyingCTE= source->p_hasModifyingCTE;
+#if PG_VERSION_NUM > 100000 
 	target->p_last_srf = source->p_last_srf;
+#endif
 	target->p_pre_columnref_hook = source->p_pre_columnref_hook;
 	target->p_post_columnref_hook = source->p_post_columnref_hook;
 	target->p_paramref_hook = source->p_paramref_hook;
@@ -697,7 +712,11 @@ static void pgqr_reanalyze(const char *new_query_string)
 	num_stmt = 0;
 	foreach(lc1, raw_parsetree_list)
 	{
+#if PG_VERSION_NUM >= 100000
 		RawStmt    *parsetree = lfirst_node(RawStmt, lc1);
+#else
+		 Node       *parsetree = (Node *) lfirst(lc1);
+#endif
 		new_query = transformTopLevelStmt(new_pstate, parsetree);	
 		num_stmt++;
 	}
@@ -733,7 +752,8 @@ static void pgqr_load_cache(bool first_run)
 
 	StringInfoData 	buf_select;
 	int		spi_return_code;
-	int		number_of_rows;
+	int		number_of_rows = 0;
+	bool		spi_execute_has_failed = false;
 
 	int		i;
 	char		*source_stmt_val = NULL;
@@ -752,7 +772,6 @@ static void pgqr_load_cache(bool first_run)
 			);
 	/* transaction already started in backend */
 	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
 	pgstat_report_activity(STATE_RUNNING, buf_select.data);						
 
 	/*
@@ -763,19 +782,49 @@ static void pgqr_load_cache(bool first_run)
 
 	PG_TRY();
 	{
-	 spi_return_code = SPI_execute(buf_select.data, false, 0);
-	 if (spi_return_code != SPI_OK_SELECT)
-	 elog(FATAL, "cannot select from pg_query_rewrite: error code %d",
-		     spi_return_code);
+	 	spi_return_code = SPI_execute(buf_select.data, false, 0);
+	 	if (spi_return_code != SPI_OK_SELECT)
+	 		elog(FATAL, "cannot select from pg_query_rewrite: error code %d",
+				     spi_return_code);
+    		 number_of_rows = SPI_processed;
         }
 	PG_CATCH();
 	{
+                spi_execute_has_failed = true;         
+                /*
+                ** PG 9.5
+		** to fix WARNING:  transaction left non-empty SPI stack  
+                ** add AtEOXact_SPI(false)
+                */
+#if PG_VERSION_NUM < 100000
+                AtEOXact_SPI(false);
+		pgstat_report_activity(STATE_IDLE, NULL);
+#endif
+
 		pgqr_is_installed_in_current_db = false;
 		elog(LOG,"pg_query_rewrite: pgqr_load_cache: SELECT error catched.");
 	}
 	PG_END_TRY();
 
-	number_of_rows = SPI_processed;
+
+	if (spi_execute_has_failed == false)
+	{
+		/* 
+                ** PG 9.5
+                ** SIGSEGV in PopActiveStnapshot
+		*/
+                /*
+                ** PG 9.5
+		** WARNING:  transaction left non-empty SPI stack  
+                ** add AtEOXact_SPI(false)
+                */
+#if PG_VERSION_NUM < 100000
+                AtEOXact_SPI(false);
+		pgstat_report_activity(STATE_IDLE, NULL);
+#endif
+	}
+		
+
 	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: number_of_rows=%d",
 		    number_of_rows);
 	
@@ -829,9 +878,10 @@ static void pgqr_load_cache(bool first_run)
 	MemoryContextSwitchTo(oldctx);
 
 	pgqr_current_rules_number = number_of_rows;
-	backend_initialized = true;	
-	SPI_finish();
-	PopActiveSnapshot();
+	backend_initialized = true;	 
+
+        SPI_finish();
+
 	/*
  	 * assertion failure Assert(entry->trans == NULL);
 	 * if called during CREATE EXTENSION step.
@@ -916,6 +966,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
  */
 static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 {
+#if PG_VERSION_NUM > 100000 
 
 	int stmt_loc;
 	int stmt_len;
@@ -923,6 +974,7 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 
 	if (pgqr_enabled == true && statement_rewritten == true)
 	{
+
 		src = queryDesc->sourceText;
 		stmt_loc = queryDesc->plannedstmt->stmt_location;
 		stmt_len = queryDesc->plannedstmt->stmt_len;
@@ -943,6 +995,7 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 	if (prev_executor_start_hook)
                 (*prev_executor_start_hook)(queryDesc, eflags);
 	else	standard_ExecutorStart(queryDesc, eflags);
+#endif
 }
 
 /*
@@ -992,8 +1045,10 @@ pgqr_signal(PG_FUNCTION_ARGS)
 
 		if (proc->pid == 0)
 			continue;			/* do not signal prepared xacts */
+#if PG_VERSION_NUM > 90600
 		if (proc->isBackgroundWorker)
 			continue;			/* do not signal background workers */
+#endif
 		/* no right ProcSignalReason found */
 		SendProcSignal(proc->pid , NUM_PROCSIGNALS, proc->backendId);
 		elog(DEBUG1, "pg_query_rewrite: pgqr_signal: signal sent to %d", proc->pid);
