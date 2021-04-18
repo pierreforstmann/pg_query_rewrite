@@ -136,7 +136,11 @@ void		_PG_fini(void);
 static 	void 	pgqr_shmem_startup(void);
 static 	void 	pgqr_shmem_shutdown(int code, Datum arg);
 
+#if PG_VERSION_NUM < 140000
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query);
+#else
+static 	void 	pgqr_analyze(ParseState *pstate, Query *query, JumbleState *jstate);
+#endif
 static	void	pgqr_reanalyze(const char *new_query_string);
 static	void	pgqr_exit(void);
 
@@ -580,8 +584,11 @@ static bool pgqr_check_rewrite(const char *current_query_source, int *array_inde
 	/* avoid recursion because pgqrPrivateArray may not be allocated */
 	if (backend_initialized == false)
 		return false;
-
+#if PG_VERSION_NUM < 140000
 	raw_parsetree_list = raw_parser(current_query_source);
+#else
+	raw_parsetree_list = raw_parser(current_query_source, RAW_PARSE_DEFAULT);
+#endif
 
 	for (i = 0 ; i < pgqr_max_rules_number; i++)	
 		if (equal(raw_parsetree_list, 
@@ -631,9 +638,15 @@ static void pgqr_clone_Query(Query *source, Query *target)
 	target->sortClause= source->sortClause;
 	target->limitOffset= source->limitOffset;
 	target->limitCount= source->limitCount;
+#if PG_VERSION_NUM > 130000 
+	target->limitOption = source->limitOption;
+#endif
 	target->rowMarks= source->rowMarks;
 	target->setOperations= source->setOperations;
 	target->constraintDeps= source->constraintDeps;
+#if PG_VERSION_NUM > 140000 
+	target->withCheckOptions = source->limitOption;
+#endif
 #if PG_VERSION_NUM > 100000 
 	target->stmt_location=source->stmt_location;
 	target->stmt_len=source->stmt_len;
@@ -867,7 +880,11 @@ static void pgqr_load_cache(bool first_run)
 			elog(FATAL, "pg_query_rewrite: pgqr_analyze: too many rules");
 		}
 
+#if PG_VERSION_NUM < 140000
 		source_stmt_raw_parsetree_list = raw_parser(source_stmt_val);		
+#else
+		source_stmt_raw_parsetree_list = raw_parser(source_stmt_val, RAW_PARSE_DEFAULT);		
+#endif
 		pgqrPrivateArray[i].source_stmt = source_stmt_val;
 		pgqrPrivateArray[i].dest_stmt = dest_stmt_val;
 		pgqrPrivateArray[i].source_stmt_raw_parsetree_list = 
@@ -908,8 +925,11 @@ static void pgqr_load_cache(bool first_run)
  * pqqr_analyze: main routine
  *
  */
-
+#if PG_VERSION_NUM < 140000
 static void pgqr_analyze(ParseState *pstate, Query *query)
+#else
+static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
+#endif
 {
 	
 	int		array_index;
@@ -953,7 +973,11 @@ static void pgqr_analyze(ParseState *pstate, Query *query)
   		 * according to parse_analyze in analyze.c 
   		 */
 		if (prev_post_parse_analyze_hook)
+#if PG_VERSION_NUM < 140000
 		 	prev_post_parse_analyze_hook(pstate, query);
+#else
+		 	prev_post_parse_analyze_hook(pstate, query,js);
+#endif
 	 }
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: exit");

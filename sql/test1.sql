@@ -17,7 +17,6 @@ select pgqr_load_rules();
 --
 select 10;
 select 1+1;
-select ((1)+(1));
 select x from t;
 begin;
 delete from t;
