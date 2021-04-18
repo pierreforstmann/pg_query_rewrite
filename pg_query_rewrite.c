@@ -7,7 +7,7 @@
  * This program is open source, licensed under the PostgreSQL license.
  * For license terms, see the LICENSE file.
  *          
- * Copyright (c) 2020, Pierre Forstmann.
+ * Copyright (c) 2020, 2021 Pierre Forstmann.
  *            
  *-------------------------------------------------------------------------
 */
@@ -40,6 +40,7 @@
 #include "utils/datum.h"
 #include "utils/builtins.h"
 #include "unistd.h"
+#include "funcapi.h"
 
 PG_MODULE_MAGIC;
 
@@ -145,6 +146,9 @@ static	void	pgqr_reanalyze(const char *new_query_string);
 static	void	pgqr_exit(void);
 
 static void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
+
+static Datum 	pgqr_spa_internal(FunctionCallInfo fcinfo);
+static Datum 	pgqr_pra_internal(FunctionCallInfo fcinfo);
 
 /*
  *  Estimate shared memory space needed.
@@ -1086,4 +1090,173 @@ pgqr_signal(PG_FUNCTION_ARGS)
 	PG_RETURN_INT32(count);
 }
 
+/*
+ *
+ * pgqr_spa: SQL-callable function to display shared proc array
+ *
+ */
 
+PG_FUNCTION_INFO_V1(pgqr_spa);
+
+Datum pgqr_spa(PG_FUNCTION_ARGS)
+{
+	
+ 	return (pgqr_spa_internal(fcinfo));	
+}
+
+static Datum pgqr_spa_internal(FunctionCallInfo fcinfo)
+{
+	ReturnSetInfo 	*rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	bool		randomAccess;
+	TupleDesc	tupdesc;
+	Tuplestorestate *tupstore;
+	AttInMetadata	 *attinmeta;
+	MemoryContext 	oldcontext;
+	int 		i;
+
+	/* The tupdesc and tuplestore must be created in ecxt_per_query_memory */
+	oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
+#if PG_VERSION_NUM <= 120000
+	tupdesc = CreateTemplateTupleDesc(3, false);
+#else
+	tupdesc = CreateTemplateTupleDesc(3);
+#endif
+	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "index",
+					   TEXTOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pid",
+					   TEXTOID, -1, 0);
+	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "reload_table_into_cache",
+					   TEXTOID, -1, 0);
+
+	randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
+	tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
+	rsinfo->returnMode = SFRM_Materialize;
+	rsinfo->setResult = tupstore;
+	rsinfo->setDesc = tupdesc;
+
+	MemoryContextSwitchTo(oldcontext);
+
+	attinmeta = TupleDescGetAttInMetadata(tupdesc);
+
+	LWLockAcquire(pgqr->lock, LW_SHARED);
+
+	for (i=0; i < pgqr->max_backend_no; i++)
+	{
+		char 		*values[3];
+		HeapTuple	tuple;
+		char		buf_v1[20];
+		char		buf_v2[20];
+		char		buf_v3[60];
+
+		if (pgqr->proc_array[i].pid != 0)
+		{
+			snprintf(buf_v1, sizeof(buf_v1), "index=%d", i);
+			values[0] = buf_v1;
+
+			snprintf(buf_v2, sizeof(buf_v2), "pid=%d", pgqr->proc_array[i].pid);
+			values[1] = buf_v2;
+
+			if (pgqr->proc_array[i].reload_table_into_cache == true)
+			{
+				strcpy(buf_v3, "reload_table_into_cache=true");
+			}
+			else
+			{	
+				strcpy(buf_v3, "reload_table_into_cache=false");
+			}
+			values[2] = buf_v3;
+
+			tuple = BuildTupleFromCStrings(attinmeta, values);
+			tuplestore_puttuple(tupstore, tuple);
+		}
+
+	}
+
+	LWLockRelease(pgqr->lock);
+
+	return (Datum)0;	
+
+}
+
+/*
+ * 
+ *  pgqr_pra: SQL-callable function to display private rule array 
+ *  
+ */
+
+PG_FUNCTION_INFO_V1(pgqr_pra);
+
+Datum pgqr_pra(PG_FUNCTION_ARGS)
+{
+
+        return (pgqr_pra_internal(fcinfo));
+}
+
+static Datum pgqr_pra_internal(FunctionCallInfo fcinfo)
+{
+        ReturnSetInfo   *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+        bool            randomAccess;
+        TupleDesc       tupdesc;
+        Tuplestorestate *tupstore;
+        AttInMetadata    *attinmeta;
+        MemoryContext   oldcontext;
+        int             i;
+
+        /* The tupdesc and tuplestore must be created in ecxt_per_query_memory */
+        oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
+#if PG_VERSION_NUM <= 120000
+        tupdesc = CreateTemplateTupleDesc(2, false);
+#else
+        tupdesc = CreateTemplateTupleDesc(2);
+#endif
+        TupleDescInitEntry(tupdesc, (AttrNumber) 1, "source",
+                                           TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "destination",
+                                           TEXTOID, -1, 0);
+
+        randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
+        tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
+        rsinfo->returnMode = SFRM_Materialize;
+        rsinfo->setResult = tupstore;
+        rsinfo->setDesc = tupdesc;
+
+        MemoryContextSwitchTo(oldcontext);
+
+        attinmeta = TupleDescGetAttInMetadata(tupdesc);
+
+        for (i=0; i < pgqr_max_rules_number; i++)
+        {
+                char            *values[2];
+                HeapTuple       tuple;
+                char            buf_v1[80];
+                char            buf_v2[80];
+		char		*source;
+	        char   		*destination;
+		char		*p_source;
+		char		*p_destination;
+        	char    	*null_string = "NULL";
+
+		source = pgqrPrivateArray[i].source_stmt;
+                destination = pgqrPrivateArray[i].dest_stmt;
+
+		if (source == NULL)
+                        p_source = null_string;
+                else    p_source = source;
+                if (destination == NULL)
+                        p_destination = null_string;
+                else    p_destination = destination;
+                
+		snprintf(buf_v1, sizeof(buf_v1), "source=%s", p_source);
+                values[0] = buf_v1;
+
+                snprintf(buf_v2, sizeof(buf_v2), "destination=%s", p_destination);
+                values[1] = buf_v2;
+
+        	tuple = BuildTupleFromCStrings(attinmeta, values);
+	        tuplestore_puttuple(tupstore, tuple);
+
+        }
+
+        return (Datum)0;
+
+}

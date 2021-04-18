@@ -50,3 +50,11 @@ CREATE FUNCTION pgqr_log_rules_cache() RETURNS BOOLEAN
  AS 'pg_query_rewrite.so', 'pgqr_log_rules_cache'
  LANGUAGE C STRICT;
 --
+CREATE FUNCTION pgqr_spa() RETURNS setof record
+ AS 'pg_query_rewrite.so', 'pgqr_spa'
+ LANGUAGE C STRICT;
+--
+CREATE FUNCTION pgqr_pra() RETURNS setof record
+ AS 'pg_query_rewrite.so', 'pgqr_pra'
+ LANGUAGE C STRICT;
+--
