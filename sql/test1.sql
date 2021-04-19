@@ -6,14 +6,12 @@ drop table if exists t;
 create table t(x int, y int);
 --
 insert into t values(1,2);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 10;','select 11;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 1+1;','select 1+2;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select x from t;','select x,y from t;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('delete from t;','delete from t where 1=0;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('update t set x=y;','update t set x=y where 1=0;',true);
-select count(*) from pg_rewrite_rule;
 --
-select pgqr_load_rules();
+select pgqr_add_rule('select 10;','select 11;');
+select pgqr_add_rule('select 1+1;','select 1+2;');
+select pgqr_add_rule('select x from t;','select x,y from t;');
+select pgqr_add_rule('delete from t;','delete from t where 1=0;');
+select pgqr_add_rule('update t set x=y;','update t set x=y where 1=0;');
 --
 select 10;
 select 1+1;

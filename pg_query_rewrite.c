@@ -10,7 +10,7 @@
  * Copyright (c) 2020, 2021 Pierre Forstmann.
  *            
  *-------------------------------------------------------------------------
-*/
+ */
 #include "postgres.h"
 #include "executor/executor.h"
 #include "executor/spi.h"
@@ -47,60 +47,22 @@
 
 PG_MODULE_MAGIC;
 
-extern 	PROC_HDR	*ProcGlobal;
-
-/*
- * must be exported
- */
-MemoryContext pgqrMemoryContext;
+#define	PGQR_MAX_STMT_LENGTH	100
 
 static	bool 	pgqr_enabled = false;
 /*
  * maximum number of rules processed
  * by the extension defined as GUC
- * and checked at run-time
- * with trigger on pg_rewrite_rules
- * table with trigger 
  */
-
-static	int	pgqr_max_rules_number = 0;
-static	int	pgqr_current_rules_number = 0;
-/*
- * to avoid recursion in pgqr_analyze
- * during backend initialization
- */
-static	bool	backend_initialized = false;
-static	bool	pgqr_load_cache_started=false;
-/* 
- * true par default but set to false
- * in pgqr_load_cache PG_CATCH block
- */
-static	bool	pgqr_is_installed_in_current_db = true;
+static int pgqrMaxRules = 0;
 
 /*
  * for pg_stat_statements assertion 
  */
 static	bool	statement_rewritten = false;
 
-
-/*
- * Private state: 
- * pg_rewrite_rule cache in backend private memory.
- *
- */
-typedef struct pgqrPrivateItem
-{
-	char	*source_stmt;
-	char	*dest_stmt;
-	List	*source_stmt_raw_parsetree_list;	
-} pgqrPrivateItem;
-
-
-static	pgqrPrivateItem	*pgqrPrivateArray;
-
 static	ParseState 	*new_static_pstate = NULL;
 static 	Query		*new_static_query = NULL;  
-static	List		*source_stmt_raw_parsetree_list = NULL;
 
 /* Saved hook values in case of unload */
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
@@ -110,23 +72,20 @@ static ExecutorStart_hook_type prev_executor_start_hook = NULL;
 
 /*
  * Global shared state:
- * backend pid array with reload private cache flag.
+ * SQL translation rules are stored in shared memory 
  */
 
 typedef struct pgqrSharedItem
 {
-	int	pid;
-	bool	reload_table_into_cache;
+	char	source_stmt[PGQR_MAX_STMT_LENGTH];
+	char	target_stmt[PGQR_MAX_STMT_LENGTH];
 } pgqrSharedItem;
 
 typedef struct pgqrSharedState
 {
 	LWLock 		*lock;
-	bool		init;
-	int		max_rules;
-	int		max_backend_no;
-	int		current_backend_no;
-	pgqrSharedItem	*proc_array;
+	int		current_rule_number;
+	pgqrSharedItem	*rules;
 
 } pgqrSharedState;
 
@@ -146,13 +105,12 @@ static 	void 	pgqr_analyze(ParseState *pstate, Query *query);
 #else
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query, JumbleState *jstate);
 #endif
+
 static	void	pgqr_reanalyze(const char *new_query_string);
-static	void	pgqr_exit(void);
+static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
 
-static void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
-
-static Datum 	pgqr_spa_internal(FunctionCallInfo fcinfo);
-static Datum 	pgqr_pra_internal(FunctionCallInfo fcinfo);
+PG_FUNCTION_INFO_V1(pgqr_add_rule);
+PG_FUNCTION_INFO_V1(pgqr_rules);
 
 /*
  *  Estimate shared memory space needed.
@@ -164,8 +122,7 @@ pgqr_memsize(void)
 	Size		size;
 
 	size = MAXALIGN(sizeof(pgqrSharedState));
-	elog(DEBUG5, "pg_query_rewrite: pgqr_memsize: max_connections=%d", MaxBackends);
-	size += MAXALIGN(sizeof(pgqrSharedItem) * MaxBackends);
+	size += MAXALIGN(sizeof(pgqrSharedItem) * pgqrMaxRules);
 
 	return size;
 }
@@ -208,17 +165,14 @@ pgqr_shmem_startup(void)
 #else
 		pgqr->lock = &(GetNamedLWLockTranche("pg_query_rewrite"))->lock;
 #endif
-		pgqr->init = false;	
-
-		pgqr->max_backend_no = MaxBackends;
-		pgqr->proc_array = (pgqrSharedItem *)ShmemAlloc(MaxBackends * sizeof(pgqrSharedItem));
-		MemSet(pgqr->proc_array, 0, MaxBackends * sizeof(pgqrSharedItem));
-		for (i=0; i < MaxBackends; i++)
+		pgqr->rules = (pgqrSharedItem *)ShmemAlloc(pgqrMaxRules * sizeof(pgqrSharedItem));
+		MemSet(pgqr->rules, 0, pgqrMaxRules * sizeof(pgqrSharedItem));
+		for (i=0; i < pgqrMaxRules; i++)
 		{
-			pgqr->proc_array[i].pid = 0;
-			pgqr->proc_array[i].reload_table_into_cache = false;	
+			pgqr->rules[i].source_stmt[0] = '\0';
+			pgqr->rules[i].target_stmt[0] = '\0'; 	
 		}
-		pgqr->current_backend_no = 0;
+		pgqr->current_rule_number = 0;
 
 	}
 
@@ -284,7 +238,7 @@ _PG_init(void)
 	DefineCustomIntVariable("pg_query_rewrite.max_rules",
 				"Maximum of number of rules.",
 				NULL,
-				&pgqr_max_rules_number,
+				&pgqrMaxRules,
 				0,	
 				0,
 				50,
@@ -294,7 +248,7 @@ _PG_init(void)
 				NULL,
 				NULL);
 
-	if (pgqr_max_rules_number == 0)
+	if (pgqrMaxRules == 0)
 	{
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.max_rules not defined");
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite not enabled");
@@ -306,7 +260,7 @@ _PG_init(void)
 	{
 
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled with %d rules", 
-                          pgqr_max_rules_number);
+                          pgqrMaxRules);
 		/*
  		 *  Request additional shared resources.  (These are no-ops if we're not in
  		 *  the postmaster process.)  We'll allocate or attach to the shared
@@ -328,8 +282,6 @@ _PG_init(void)
 
 	}
 
-	pgqrMemoryContext = AllocSetContextCreate(TopMemoryContext, "PGQR context", ALLOCSET_DEFAULT_SIZES);
-
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():exit");
 }
 
@@ -345,255 +297,85 @@ _PG_fini(void)
 	ExecutorStart_hook = prev_executor_start_hook;
 }
 
-/*
- * pgqr_add_backend_in_proc_array
- */
 
-static
-void pgqr_add_backend_in_proc_array(void)
+static bool pgqr_add_rule_internal(char *source, char *target)
 {
-	PGPROC	*proc=MyProc;
-	bool	found = false;
-	int 	i;
-
-	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
-	for (i = 0; i < pgqr->max_backend_no && found == false; i++)
-	{
-		if (pgqr->proc_array[i].pid == 0)
-		{
-			found = true;
-			pgqr->proc_array[i].pid=proc->pid;
-			pgqr->proc_array[i].reload_table_into_cache=false;
-			pgqr->current_backend_no++;
-		}
-	}
-	LWLockRelease(pgqr->lock);
-
-	if (found == false)
-		elog(WARNING, "pg_query_rewrite: add_backend: "
-                           "proc_array is full");
-}
-
-/*
- * pgqr_del_backend_in_proc_array
- */
-
-static
-void pgqr_del_backend_in_proc_array(void)
-{
-	int	pid;
-	int	i;
-	bool	found = false;
-
-	/* 
-	 * cannot take LWlock in backend exit ... 
-	 * cannot access MyProc in backend exit ...
-	 * TODO: race condition with pgqr_add_backend_in_proc_array
-	 * use spin lock instead of LWLock ?
- 	 */
-	pid = getpid();
-	for (i = 0; i < pgqr->max_backend_no && found == false; i++)
-	{
-		if (pgqr->proc_array[i].pid == pid)
-		{
-			found = true;
-			pgqr->proc_array[i].pid=0;
-			pgqr->proc_array[i].reload_table_into_cache=false;
-			pgqr->current_backend_no--;
-		}
-	}
-	if (found == false)
-		elog(WARNING, "pg_query_rewrite: del_backend: "
-                           "pid=%d not found", pid);
-	
-}
-
-/*
- * pgqr_backend_check_load_cache
- */
-static bool pgqr_backend_check_reload_cache()
-{
-	PGPROC	*proc=MyProc;
-	bool	found = false;
-	int	i;
-
-	if (backend_initialized == false)	
-		return false;
-
-	LWLockAcquire(pgqr->lock, LW_SHARED);
-	for (i = 0; i < pgqr->max_backend_no && found == false; i++)
-        {
-                if (pgqr->proc_array[i].pid == proc->pid)
-                {
-                        found = true;
-			break;
-                }
-        }
-
-	LWLockRelease(pgqr->lock);
-	if (found == true)
-	        return pgqr->proc_array[i].reload_table_into_cache;
-
- 	if (i == pgqr->max_backend_no && found == false)
-		elog(WARNING, "pg_query_rewrite: pgqr_check_reload_cache: "
-                           "pid=%d not found", proc->pid);
-	return false;
-		
-}
-
-
-/*
- * pgqr_log_proc_array 
- * 
- */
-PG_FUNCTION_INFO_V1(pgqr_log_proc_array);
-
-Datum
-pgqr_log_proc_array(PG_FUNCTION_ARGS)
-{
-        int     i;
-	int	pid;
-	bool	flag;
-
-	elog(LOG, "getpid=%d", getpid());
-	elog(LOG, "pgqr->max_backend_no=%d", pgqr->max_backend_no);
-	elog(LOG, "pgqr->current_backend_no=%d", pgqr->current_backend_no);
-        for (i = 0; i < pgqr->max_backend_no; i++)
-		if (pgqr->proc_array[i].pid != 0)
-		{
-			pid = pgqr->proc_array[i].pid;
-			flag = pgqr->proc_array[i].reload_table_into_cache;
-			elog(LOG, "index=%d pid=%d reload_table_into_cache=%d", i, pid, flag); 
-		}
-	PG_RETURN_BOOL(true);
-
-}
-
-/*
- * pgqr_log_rules_cache 
- * 
- */
-PG_FUNCTION_INFO_V1(pgqr_log_rules_cache);
-
-Datum
-pgqr_log_rules_cache(PG_FUNCTION_ARGS)
-{
-        int     i;
-	char	*source;
-	char	*p_source;
-	char	*destination;
-	char	*p_destination;
-	char	*null_string = "NULL";
-
-	elog(LOG, "getpid=%d", getpid());
-	elog(LOG, "pgqr_max_rules_number=%d", pgqr_max_rules_number);
-	elog(LOG, "pgqr_current_rules_number=%d", pgqr_current_rules_number);
-        for (i = 0; i < pgqr_max_rules_number; i++)
-	{
-		source = pgqrPrivateArray[i].source_stmt;
-		destination = pgqrPrivateArray[i].dest_stmt;
-		if (source == NULL)
-			p_source = null_string;
-		else	p_source = source;
-		if (destination == NULL)
-			p_destination = null_string;
-		else	p_destination = destination;
-		elog(LOG, "index=%d source=%s destination=%s", i, p_source, p_destination); 
-	}
-	PG_RETURN_BOOL(true);
-
-}
-/*
- * pgqr_reset_load_flag
- */
-static void pgqr_reset_load_flag(void)
-{
-	PGPROC	*proc=MyProc;
-	bool	found = false;
-	int	i;
 
 	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
 
-	for (i = 0; i < pgqr->max_backend_no && found == false; i++)
-        {
-                if (pgqr->proc_array[i].pid == proc->pid)
-                {
-                        found = true;
-	         	pgqr->proc_array[i].reload_table_into_cache = false;
-                }
-        }
+	if (pgqr->current_rule_number == pgqrMaxRules)
+	{
+		LWLockRelease(pgqr->lock);
+		ereport(ERROR, (errmsg("Maximum rule number is reached %d", pgqrMaxRules)));
+	}
 
-	LWLockRelease(pgqr->lock);
+	if (strlen(source) > PGQR_MAX_STMT_LENGTH)
+	{
+		LWLockRelease(pgqr->lock);
+		ereport(ERROR, (errmsg("Source statement length %zu is greater than %d", 
+                               strlen(source), PGQR_MAX_STMT_LENGTH)));
+	}
 
- 	if (found == false)
-		elog(WARNING, "pg_query_rewrite: pgqr_reset_load_flag: "
-                           "pid=%d not found", proc->pid);
+	if (strlen(target) > PGQR_MAX_STMT_LENGTH)
+	{
+		LWLockRelease(pgqr->lock);
+		ereport(ERROR, (errmsg("Target statement length %zu is greater than %d", 
+                               strlen(target), PGQR_MAX_STMT_LENGTH)));
+	}
+
+	strcpy(pgqr->rules[pgqr->current_rule_number].source_stmt, source);
+	strcpy(pgqr->rules[pgqr->current_rule_number].target_stmt, target);
+	pgqr->current_rule_number++;
+
+	LWLockRelease(pgqr->lock);	
 	
+	return true;
+
 }
 
-
-PG_FUNCTION_INFO_V1(pgqr_load_rules);
-
 /*
- * pgqr_load_rules
+ * pgqr_add_rule
  *
- * SQL-callable function to run after
- * pg_rewrite_rules table has been modified.
+ * SQL-callable function to add a SQL translation rule
  *
  */
-Datum 
-pgqr_load_rules(PG_FUNCTION_ARGS)
+Datum pgqr_add_rule(PG_FUNCTION_ARGS)
 {
-	int 	i;
 
-	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
+ 	 char  *source;
+         char  *target;
 
-	for (i = 0; i < pgqr->max_backend_no; i++)
-	{
-		if (pgqr->proc_array[i].pid != 0)
-		{
-			/*
- 			 * set reload flag to true:
- 			 * each backend is going to test its own flag
- 			 * and reload its cache.
- 			 */ 
-			pgqr->proc_array[i].reload_table_into_cache=true;
-		}
-	}
-	LWLockRelease(pgqr->lock);
+         source = PG_GETARG_CSTRING(0);
+         target = PG_GETARG_CSTRING(1);
+         elog(LOG, "pgqr_add_rule source=%s target=%s", source, target);
 
-	/* for backend that has just run CREATE EXTENSION */
-	pgqr_is_installed_in_current_db = true;	
-	PG_RETURN_BOOL(true);
+         PG_RETURN_BOOL(pgqr_add_rule_internal(source, target));	
 
 }
+
+
+
 /*
  * check if the current query needs to be rewritten:
  * returns true if must be rewritten, otherwise false;
- * array_index is the position of the equivalent query
- * in pgqrPrivateArray.
+ * array_index is the position of the target query
+ * in pgqr->rules array.
  */
-static bool pgqr_check_rewrite(const char *current_query_source, int *array_index) 
+static bool pgqr_check_rewrite(const char *current_query_source, int *rule_index) 
 {
 
-	List 	*raw_parsetree_list;
 	int	i;
 
-	*array_index = pgqr_max_rules_number;	
-	/* avoid recursion because pgqrPrivateArray may not be allocated */
-	if (backend_initialized == false)
-		return false;
-#if PG_VERSION_NUM < 140000
-	raw_parsetree_list = raw_parser(current_query_source);
-#else
-	raw_parsetree_list = raw_parser(current_query_source, RAW_PARSE_DEFAULT);
-#endif
+	*rule_index = pgqrMaxRules;	
 
-	for (i = 0 ; i < pgqr_max_rules_number; i++)	
-		if (equal(raw_parsetree_list, 
-        		pgqrPrivateArray[i].source_stmt_raw_parsetree_list))
+	/*
+ 	 * To be checked: possible recursion issue ?
+	 */
+
+	for (i = 0 ; i < pgqrMaxRules; i++)	
+		if (strcmp(current_query_source, pgqr->rules[i].source_stmt) == 0)
 		{
-			*array_index = i;
+			*rule_index = i;
 			return true;
 		}
 
@@ -749,163 +531,6 @@ static void pgqr_reanalyze(const char *new_query_string)
 }
 
 /*
- * pgqr_load_cache
- *
- * first_run: true if first execution is current backend.
- */
-
-static void pgqr_load_cache(bool first_run)
-{
-	/* parse once pg_query_rule.pattern 
- 	 * to be able to make query comparison 
- 	 * with "equal" routine 
- 	 * and cache it in backend private memory
- 	 */
-
-	StringInfoData 	buf_select;
-	int		spi_return_code;
-	int		number_of_rows = 0;
-	bool		spi_execute_has_failed = false;
-
-	int		i;
-	char		*source_stmt_val = NULL;
-	char		*dest_stmt_val = NULL;
-	MemoryContext 	oldctx;
-	void		(*on_exit_fp)();
-	
-	pgqr_load_cache_started=true;
-
-	/*
- 	 * TODO: should release memory when loading new cache 
- 	 */
-	oldctx = MemoryContextSwitchTo(pgqrMemoryContext);
-	pgqrPrivateArray = (pgqrPrivateItem *)
-                            palloc(sizeof(pgqrPrivateItem)*pgqr_max_rules_number);
-	if (pgqrPrivateArray == NULL)
-		elog(FATAL, "pg_query_rewrite: palloc failed");
-	MemoryContextSwitchTo(oldctx);
-
-	initStringInfo(&buf_select);
-			appendStringInfo(&buf_select,
-			"SELECT id, pattern, replacement "
-			"FROM pg_rewrite_rule "
-      			"WHERE enabled = true "
-			"ORDER BY id"
-			);
-	/* transaction already started in backend */
-	SPI_connect();
-	pgstat_report_activity(STATE_RUNNING, buf_select.data);						
-
-	/*
- 	* assume any error means that table pg_query_rewrite does not exist
-	* and that extension pg_query_rewrite is not installed in current
-	* database
-	*/
-
-	PG_TRY();
-	{
-	 	spi_return_code = SPI_execute(buf_select.data, false, 0);
-	 	if (spi_return_code != SPI_OK_SELECT)
-	 		elog(FATAL, "cannot select from pg_query_rewrite: error code %d",
-				     spi_return_code);
-    		 number_of_rows = SPI_processed;
-        }
-	PG_CATCH();
-	{
-                spi_execute_has_failed = true;         
-#if PG_VERSION_NUM < 100000
-		pgstat_report_activity(STATE_IDLE, NULL);
-#endif
-
-		pgqr_is_installed_in_current_db = false;
-		elog(LOG,"pg_query_rewrite: pgqr_load_cache: SELECT error catched.");
-	}
-	PG_END_TRY();
-
-
-	if (spi_execute_has_failed == false)
-	{
-#if PG_VERSION_NUM < 100000
-		pgstat_report_activity(STATE_IDLE, NULL);
-#endif
-	}
-		
-
-	elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: number_of_rows=%d", number_of_rows);
-	
-	i = 0;
-	oldctx = MemoryContextSwitchTo(pgqrMemoryContext);
-
-	for (i = 0; i < number_of_rows; i++)
-	{
-		bool 	val_is_null;
-		int32	rule_id;
-
-		rule_id = DatumGetInt32(SPI_getbinval(SPI_tuptable->vals[i],
-							  SPI_tuptable->tupdesc,
-							  1, &val_is_null));
-		if (! val_is_null)
-		{
-			source_stmt_val = SPI_getvalue(SPI_tuptable->vals[i],
-	  				    SPI_tuptable->tupdesc,
-							    2);
-			dest_stmt_val = SPI_getvalue(SPI_tuptable->vals[i],
-                                                         SPI_tuptable->tupdesc,
-                                                            3);
-		
-		}
-		else 
-		{
-			elog(WARNING, "pg_query_rewrite : id is NULL");
-		}
-
-		if ( i > pgqr_max_rules_number )
-		{
-			elog(FATAL, "pg_query_rewrite: pgqr_analyze: too many rules");
-		}
-
-#if PG_VERSION_NUM < 140000
-		source_stmt_raw_parsetree_list = raw_parser(source_stmt_val);		
-#else
-		source_stmt_raw_parsetree_list = raw_parser(source_stmt_val, RAW_PARSE_DEFAULT);		
-#endif
-		pgqrPrivateArray[i].source_stmt = source_stmt_val;
-		pgqrPrivateArray[i].dest_stmt = dest_stmt_val;
-		pgqrPrivateArray[i].source_stmt_raw_parsetree_list = 
-	           		   source_stmt_raw_parsetree_list;
-		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: source_stmt=%s", source_stmt_val);
-		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: dest_stmt_val=%s", dest_stmt_val);
-		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: processed rule_id=%d", rule_id);
-	}
-
-	pgqr_current_rules_number = number_of_rows;
-	backend_initialized = true;	 
-	MemoryContextSwitchTo(oldctx);
-
-        SPI_finish();
-
-	/*
- 	 * assertion failure Assert(entry->trans == NULL);
-	 * if called during CREATE EXTENSION step.
-	 *
-	 * pgstat_report_stat(false);
-	 * pgstat_report_activity(STATE_IDLE, NULL);
-	*/
-
-	if (first_run == true)
-	{
-		pgqr_add_backend_in_proc_array();		
-		on_exit_fp = pgqr_exit;
-		on_proc_exit(on_exit_fp, (Datum)NULL);
-	}
-	else	pgqr_reset_load_flag();
-
-	pgqr_load_cache_started = false;
-	elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: %d rules loaded", number_of_rows);
-
-}
-
-/*
  *
  * pqqr_analyze: main routine
  *
@@ -917,51 +542,41 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 #endif
 {
 	
-	int		array_index;
+	int		rules_index;
 
 	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: entry: %s",pstate->p_sourcetext);
 
 	statement_rewritten = false;
 
-	if (pgqr_is_installed_in_current_db)
- 	{	
-
-		if (backend_initialized == false && pgqr_load_cache_started == false)
-		{
-			pgqr_load_cache(true);
-		}
-		if (pgqr_backend_check_reload_cache() == true && pgqr_load_cache_started == false)
-		{
-			pgqr_load_cache(false);
-		}
-		/* pstate->p_sourcetext is the current query text */	
-		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
-		if (pgqr_check_rewrite(pstate->p_sourcetext, &array_index))
-		{
-			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=true", 
-                                     pstate->p_sourcetext);
-			/* 
- 			** analyze destination statement 
-			*/
-			pgqr_reanalyze(pgqrPrivateArray[array_index].dest_stmt);
-			/* clone data */
-			pgqr_clone_ParseState(new_static_pstate, pstate);
-			elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",
+	/* pstate->p_sourcetext is the current query text */	
+	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
+	if (pgqr_check_rewrite(pstate->p_sourcetext, &rules_index))
+	{
+		elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=true", 
                                     pstate->p_sourcetext);
-			pgqr_clone_Query(new_static_query, query);
-			statement_rewritten = true;
-		} else
-			elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
-                                    pstate->p_sourcetext);
+		/* 
+ 		** analyze destination statement 
+		*/
+		pgqr_reanalyze(pgqr->rules[rules_index].target_stmt);
+		/* clone data */
+		pgqr_clone_ParseState(new_static_pstate, pstate);
+		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",
+                                   pstate->p_sourcetext);
+		pgqr_clone_Query(new_static_query, query);
+		statement_rewritten = true;
+	} else
+		elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
+                             pstate->p_sourcetext);
 
-		/* no "standard_analyze" to call 
-  		 * according to parse_analyze in analyze.c 
-  		 */
-		if (prev_post_parse_analyze_hook)
+	/* no "standard_analyze" to call 
+  	 * according to parse_analyze in analyze.c 
+  	 */
+	if (prev_post_parse_analyze_hook)
+	{
 #if PG_VERSION_NUM < 140000
-		 	prev_post_parse_analyze_hook(pstate, query);
+	 	prev_post_parse_analyze_hook(pstate, query);
 #else
-		 	prev_post_parse_analyze_hook(pstate, query,js);
+		 prev_post_parse_analyze_hook(pstate, query,js);
 #endif
 	 }
 
@@ -1011,172 +626,13 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 }
 
 /*
- * on_proc_exit callback
  * 
- */
-static void pgqr_exit()
-{
-
-	elog(DEBUG1, "pg_query_rewrite: pgqr_exit: entry");
-
-	/* not possible to LWLockAcquire
- 	 * TRAP: FailedAssertion("!(!(proc == ((void *)0) && IsUnderPostmaster)
-	 * with PGPROC	   *proc = MyProc;
-	 */
-
-	pgqr_del_backend_in_proc_array();
-	elog(DEBUG1, "pg_query_rewrite: pgqr_exit: exit");
-}
-
-
-
-PG_FUNCTION_INFO_V1(pgqr_signal);
-
-/*
- * pgqr_signal:
- * could be used to notfiy backend to reload pg_rewrite_rule data
- * into private cache.
- *
- * (from CountDBConnections in procarray.c)
- */
-Datum 
-pgqr_signal(PG_FUNCTION_ARGS)
-{
-
-
-	int	count = 0;
-	int	index;
-
-
-	elog(DEBUG1, "pg_query_rewrite: pgqr_signal: entry");
-	LWLockAcquire(ProcArrayLock, LW_SHARED);
-
-	for (index = 0; index < ProcGlobal->allProcCount; index++)
-	{
-		PGPROC	*proc = &ProcGlobal->allProcs[index];
-
-		if (proc->pid == 0)
-			continue;			/* do not signal prepared xacts */
-#if PG_VERSION_NUM > 90600
-		if (proc->isBackgroundWorker)
-			continue;			/* do not signal background workers */
-#endif
-		/* no right ProcSignalReason found */
-		SendProcSignal(proc->pid , NUM_PROCSIGNALS, proc->backendId);
-		elog(DEBUG1, "pg_query_rewrite: pgqr_signal: signal sent to %d", proc->pid);
-		count++;
-	}
-
-
-	LWLockRelease(ProcArrayLock);
-	elog(DEBUG1, "pg_query_rewrite: pgqr_signal: exit");
-
-	PG_RETURN_INT32(count);
-}
-
-/*
- *
- * pgqr_spa: SQL-callable function to display shared proc array
- *
- */
-
-PG_FUNCTION_INFO_V1(pgqr_spa);
-
-Datum pgqr_spa(PG_FUNCTION_ARGS)
-{
-	
- 	return (pgqr_spa_internal(fcinfo));	
-}
-
-static Datum pgqr_spa_internal(FunctionCallInfo fcinfo)
-{
-	ReturnSetInfo 	*rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	bool		randomAccess;
-	TupleDesc	tupdesc;
-	Tuplestorestate *tupstore;
-	AttInMetadata	 *attinmeta;
-	MemoryContext 	oldcontext;
-	int 		i;
-
-	/* The tupdesc and tuplestore must be created in ecxt_per_query_memory */
-	oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
-#if PG_VERSION_NUM <= 120000
-	tupdesc = CreateTemplateTupleDesc(3, false);
-#else
-	tupdesc = CreateTemplateTupleDesc(3);
-#endif
-	TupleDescInitEntry(tupdesc, (AttrNumber) 1, "index",
-					   TEXTOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pid",
-					   TEXTOID, -1, 0);
-	TupleDescInitEntry(tupdesc, (AttrNumber) 3, "reload_table_into_cache",
-					   TEXTOID, -1, 0);
-
-	randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
-	tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
-	rsinfo->returnMode = SFRM_Materialize;
-	rsinfo->setResult = tupstore;
-	rsinfo->setDesc = tupdesc;
-
-	MemoryContextSwitchTo(oldcontext);
-
-	attinmeta = TupleDescGetAttInMetadata(tupdesc);
-
-	LWLockAcquire(pgqr->lock, LW_SHARED);
-
-	for (i=0; i < pgqr->max_backend_no; i++)
-	{
-		char 		*values[3];
-		HeapTuple	tuple;
-		char		buf_v1[20];
-		char		buf_v2[20];
-		char		buf_v3[60];
-
-		if (pgqr->proc_array[i].pid != 0)
-		{
-			snprintf(buf_v1, sizeof(buf_v1), "index=%d", i);
-			values[0] = buf_v1;
-
-			snprintf(buf_v2, sizeof(buf_v2), "pid=%d", pgqr->proc_array[i].pid);
-			values[1] = buf_v2;
-
-			if (pgqr->proc_array[i].reload_table_into_cache == true)
-			{
-				strcpy(buf_v3, "reload_table_into_cache=true");
-			}
-			else
-			{	
-				strcpy(buf_v3, "reload_table_into_cache=false");
-			}
-			values[2] = buf_v3;
-
-			tuple = BuildTupleFromCStrings(attinmeta, values);
-			tuplestore_puttuple(tupstore, tuple);
-		}
-
-	}
-
-	LWLockRelease(pgqr->lock);
-
-	return (Datum)0;	
-
-}
-
-/*
- * 
- *  pgqr_pra: SQL-callable function to display private rule array 
+ *  pgqr_rules: SQL-callable function to display shared rules 
  *  
  */
 
-PG_FUNCTION_INFO_V1(pgqr_pra);
 
-Datum pgqr_pra(PG_FUNCTION_ARGS)
-{
-
-        return (pgqr_pra_internal(fcinfo));
-}
-
-static Datum pgqr_pra_internal(FunctionCallInfo fcinfo)
+static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
 {
         ReturnSetInfo   *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
         bool            randomAccess;
@@ -1195,7 +651,7 @@ static Datum pgqr_pra_internal(FunctionCallInfo fcinfo)
 #endif
         TupleDescInitEntry(tupdesc, (AttrNumber) 1, "source",
                                            TEXTOID, -1, 0);
-        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "destination",
+        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "target",
                                            TEXTOID, -1, 0);
 
         randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
@@ -1208,32 +664,32 @@ static Datum pgqr_pra_internal(FunctionCallInfo fcinfo)
 
         attinmeta = TupleDescGetAttInMetadata(tupdesc);
 
-        for (i=0; i < pgqr_max_rules_number; i++)
+        for (i=0; i < pgqrMaxRules; i++)
         {
                 char            *values[2];
                 HeapTuple       tuple;
-                char            buf_v1[80];
-                char            buf_v2[80];
+                char            buf_v1[PGQR_MAX_STMT_LENGTH];
+                char            buf_v2[PGQR_MAX_STMT_LENGTH];
 		char		*source;
-	        char   		*destination;
+	        char   		*target;
 		char		*p_source;
-		char		*p_destination;
+		char		*p_target;
         	char    	*null_string = "NULL";
 
-		source = pgqrPrivateArray[i].source_stmt;
-                destination = pgqrPrivateArray[i].dest_stmt;
+		source = pgqr->rules[i].source_stmt;
+                target = pgqr->rules[i].target_stmt;
 
-		if (source == NULL)
+		if (strlen(source) == 0)
                         p_source = null_string;
                 else    p_source = source;
-                if (destination == NULL)
-                        p_destination = null_string;
-                else    p_destination = destination;
+                if (strlen(target) == 0)
+                        p_target = null_string;
+                else    p_target = target;
                 
 		snprintf(buf_v1, sizeof(buf_v1), "source=%s", p_source);
                 values[0] = buf_v1;
 
-                snprintf(buf_v2, sizeof(buf_v2), "destination=%s", p_destination);
+                snprintf(buf_v2, sizeof(buf_v2), "target=%s", p_target);
                 values[1] = buf_v2;
 
         	tuple = BuildTupleFromCStrings(attinmeta, values);
@@ -1244,3 +700,10 @@ static Datum pgqr_pra_internal(FunctionCallInfo fcinfo)
         return (Datum)0;
 
 }
+
+Datum pgqr_rules(PG_FUNCTION_ARGS)
+{
+
+        return (pgqr_rules_internal(fcinfo));
+}
+

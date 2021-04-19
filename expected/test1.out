@@ -8,21 +8,34 @@ NOTICE:  table "t" does not exist, skipping
 create table t(x int, y int);
 --
 insert into t values(1,2);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 10;','select 11;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select 1+1;','select 1+2;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('select x from t;','select x,y from t;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('delete from t;','delete from t where 1=0;',true);
-insert into pg_rewrite_rule(pattern, replacement, enabled) values('update t set x=y;','update t set x=y where 1=0;',true);
-select count(*) from pg_rewrite_rule;
- count 
--------
-     5
+--
+select pgqr_add_rule('select 10;','select 11;');
+ pgqr_add_rule 
+---------------
+ t
 (1 row)
 
---
-select pgqr_load_rules();
- pgqr_load_rules 
------------------
+select pgqr_add_rule('select 1+1;','select 1+2;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select pgqr_add_rule('select x from t;','select x,y from t;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select pgqr_add_rule('delete from t;','delete from t where 1=0;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select pgqr_add_rule('update t set x=y;','update t set x=y where 1=0;');
+ pgqr_add_rule 
+---------------
  t
 (1 row)
 
