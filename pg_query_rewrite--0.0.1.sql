@@ -1,5 +1,5 @@
 drop table if exists pg_rewrite_rule cascade;
-drop function if exists pg_rewrite_query_check_rules_number;
+drop function if exists pg_rewrite_query_check_rules_number();
 drop function if exists pgqr_signal();
 drop function if exists pgqr_load_rules();
 drop function if exists pgqr_log_proc_array();

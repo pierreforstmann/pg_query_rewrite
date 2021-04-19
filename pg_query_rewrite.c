@@ -32,7 +32,9 @@
 #include "storage/ipc.h"
 #include "storage/spin.h"
 #include "miscadmin.h"
+#if PG_VERSION_NUM >= 90600
 #include "nodes/extensible.h"
+#endif
 #if PG_VERSION_NUM > 120000
 #include "nodes/pathnodes.h"
 #endif
@@ -41,10 +43,16 @@
 #include "utils/builtins.h"
 #include "unistd.h"
 #include "funcapi.h"
+#include "catalog/pg_type.h"
 
 PG_MODULE_MAGIC;
 
 extern 	PROC_HDR	*ProcGlobal;
+
+/*
+ * must be exported
+ */
+MemoryContext pgqrMemoryContext;
 
 static	bool 	pgqr_enabled = false;
 /*
@@ -65,7 +73,7 @@ static	bool	backend_initialized = false;
 static	bool	pgqr_load_cache_started=false;
 /* 
  * true par default but set to false
- * in pg_load_cache PG_CATCH block
+ * in pgqr_load_cache PG_CATCH block
  */
 static	bool	pgqr_is_installed_in_current_db = true;
 
@@ -73,6 +81,7 @@ static	bool	pgqr_is_installed_in_current_db = true;
  * for pg_stat_statements assertion 
  */
 static	bool	statement_rewritten = false;
+
 
 /*
  * Private state: 
@@ -85,6 +94,7 @@ typedef struct pgqrPrivateItem
 	char	*dest_stmt;
 	List	*source_stmt_raw_parsetree_list;	
 } pgqrPrivateItem;
+
 
 static	pgqrPrivateItem	*pgqrPrivateArray;
 
@@ -117,12 +127,6 @@ typedef struct pgqrSharedState
 	int		max_backend_no;
 	int		current_backend_no;
 	pgqrSharedItem	*proc_array;
-
-        /* actually this structure is bigger 
- 	 * than above fields to store
- 	 * proc_array dynamically at
- 	 * structure end.
- 	 */	
 
 } pgqrSharedState;
 
@@ -158,14 +162,10 @@ static Size
 pgqr_memsize(void)
 {
 	Size		size;
-	int		max_conn;
-	const char	*max_conn_string;		
 
 	size = MAXALIGN(sizeof(pgqrSharedState));
-	max_conn_string = GetConfigOption("max_connections", false, false);	
-	max_conn = pg_atoi(max_conn_string, 1, 0);
-	elog(DEBUG5, "pg_query_rewrite: pgqr_memsize: max_connections=%d", max_conn);
-	size += MAXALIGN(sizeof(pgqrSharedItem) * max_conn);
+	elog(DEBUG5, "pg_query_rewrite: pgqr_memsize: max_connections=%d", MaxBackends);
+	size += MAXALIGN(sizeof(pgqrSharedItem) * MaxBackends);
 
 	return size;
 }
@@ -179,8 +179,6 @@ static void
 pgqr_shmem_startup(void)
 {
 	bool		found;
-	const char	*max_conn_string;
-	int		max_conn;
 	int		i;
 
 	elog(DEBUG5, "pg_query_rewrite: pgqr_shmem_startup: entry");
@@ -212,21 +210,16 @@ pgqr_shmem_startup(void)
 #endif
 		pgqr->init = false;	
 
-		max_conn_string = GetConfigOption("max_connections", false, false);	
-		max_conn = pg_atoi(max_conn_string, 1, 0);
-		pgqr->max_backend_no = max_conn;
-		/* 
- 		 * set proc_array address 
- 		 */
-		pgqr->proc_array = (pgqrSharedItem *)((char *)&(pgqr->proc_array) + sizeof(pgqr->proc_array));
-		
-		for (i=0 ; i < max_conn; i++)
+		pgqr->max_backend_no = MaxBackends;
+		pgqr->proc_array = (pgqrSharedItem *)ShmemAlloc(MaxBackends * sizeof(pgqrSharedItem));
+		MemSet(pgqr->proc_array, 0, MaxBackends * sizeof(pgqrSharedItem));
+		for (i=0; i < MaxBackends; i++)
 		{
 			pgqr->proc_array[i].pid = 0;
 			pgqr->proc_array[i].reload_table_into_cache = false;	
 		}
 		pgqr->current_backend_no = 0;
-		
+
 	}
 
 	LWLockRelease(AddinShmemInitLock);
@@ -334,6 +327,8 @@ _PG_init(void)
 
 
 	}
+
+	pgqrMemoryContext = AllocSetContextCreate(TopMemoryContext, "PGQR context", ALLOCSET_DEFAULT_SIZES);
 
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():exit");
 }
@@ -754,7 +749,7 @@ static void pgqr_reanalyze(const char *new_query_string)
 }
 
 /*
- * pqgr_load_cache
+ * pgqr_load_cache
  *
  * first_run: true if first execution is current backend.
  */
@@ -780,6 +775,16 @@ static void pgqr_load_cache(bool first_run)
 	
 	pgqr_load_cache_started=true;
 
+	/*
+ 	 * TODO: should release memory when loading new cache 
+ 	 */
+	oldctx = MemoryContextSwitchTo(pgqrMemoryContext);
+	pgqrPrivateArray = (pgqrPrivateItem *)
+                            palloc(sizeof(pgqrPrivateItem)*pgqr_max_rules_number);
+	if (pgqrPrivateArray == NULL)
+		elog(FATAL, "pg_query_rewrite: palloc failed");
+	MemoryContextSwitchTo(oldctx);
+
 	initStringInfo(&buf_select);
 			appendStringInfo(&buf_select,
 			"SELECT id, pattern, replacement "
@@ -792,7 +797,7 @@ static void pgqr_load_cache(bool first_run)
 	pgstat_report_activity(STATE_RUNNING, buf_select.data);						
 
 	/*
- 	* assume any error means that table pg_query_rewrite does not exit
+ 	* assume any error means that table pg_query_rewrite does not exist
 	* and that extension pg_query_rewrite is not installed in current
 	* database
 	*/
@@ -808,13 +813,7 @@ static void pgqr_load_cache(bool first_run)
 	PG_CATCH();
 	{
                 spi_execute_has_failed = true;         
-                /*
-                ** PG 9.5
-		** to fix WARNING:  transaction left non-empty SPI stack  
-                ** add AtEOXact_SPI(false)
-                */
 #if PG_VERSION_NUM < 100000
-                AtEOXact_SPI(false);
 		pgstat_report_activity(STATE_IDLE, NULL);
 #endif
 
@@ -826,35 +825,16 @@ static void pgqr_load_cache(bool first_run)
 
 	if (spi_execute_has_failed == false)
 	{
-		/* 
-                ** PG 9.5
-                ** SIGSEGV in PopActiveStnapshot
-		*/
-                /*
-                ** PG 9.5
-		** WARNING:  transaction left non-empty SPI stack  
-                ** add AtEOXact_SPI(false)
-                */
 #if PG_VERSION_NUM < 100000
-                AtEOXact_SPI(false);
 		pgstat_report_activity(STATE_IDLE, NULL);
 #endif
 	}
 		
 
-	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: number_of_rows=%d",
-		    number_of_rows);
+	elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: number_of_rows=%d", number_of_rows);
 	
 	i = 0;
-	/*
- 	 * TODO: should release memory when loading new cache 
- 	 */
-	oldctx = MemoryContextSwitchTo(CacheMemoryContext);
-	pgqrPrivateArray = (pgqrPrivateItem *)
-                            palloc(sizeof(pgqrPrivateItem)*pgqr_max_rules_number);
-	if (pgqrPrivateArray == NULL)
-		elog(FATAL, "pg_query_rewrite: palloc failed");
-		
+	oldctx = MemoryContextSwitchTo(pgqrMemoryContext);
 
 	for (i = 0; i < number_of_rows; i++)
 	{
@@ -893,13 +873,14 @@ static void pgqr_load_cache(bool first_run)
 		pgqrPrivateArray[i].dest_stmt = dest_stmt_val;
 		pgqrPrivateArray[i].source_stmt_raw_parsetree_list = 
 	           		   source_stmt_raw_parsetree_list;
-		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: processed rule_id=%d",
-			    	    rule_id);
+		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: source_stmt=%s", source_stmt_val);
+		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: dest_stmt_val=%s", dest_stmt_val);
+		elog(DEBUG1,"pg_query_rewrite: pgqr_load_cache: processed rule_id=%d", rule_id);
 	}
-	MemoryContextSwitchTo(oldctx);
 
 	pgqr_current_rules_number = number_of_rows;
 	backend_initialized = true;	 
+	MemoryContextSwitchTo(oldctx);
 
         SPI_finish();
 
@@ -938,7 +919,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 	
 	int		array_index;
 
-	elog(DEBUG1, "pg_query_rewrite: pgqr_analyze: entry");
+	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: entry: %s",pstate->p_sourcetext);
 
 	statement_rewritten = false;
 
@@ -1019,11 +1000,14 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 		stmt_loc = queryDesc->plannedstmt->stmt_location;
 		elog(DEBUG1, "pg_query_rewrite: pgqr_exec: stmt_loc=%d", stmt_loc);
 	}
+#endif
+	/*
+ 	 * must always execute here whatever PG_VERSION_NUM
+ 	 */
 
 	if (prev_executor_start_hook)
                 (*prev_executor_start_hook)(queryDesc, eflags);
 	else	standard_ExecutorStart(queryDesc, eflags);
-#endif
 }
 
 /*
