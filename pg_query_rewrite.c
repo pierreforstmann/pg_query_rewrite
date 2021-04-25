@@ -79,6 +79,7 @@ typedef struct pgqrSharedItem
 {
 	char	source_stmt[PGQR_MAX_STMT_LENGTH];
 	char	target_stmt[PGQR_MAX_STMT_LENGTH];
+	int	rewrite_count;
 } pgqrSharedItem;
 
 typedef struct pgqrSharedState
@@ -108,6 +109,8 @@ static 	void 	pgqr_analyze(ParseState *pstate, Query *query, JumbleState *jstate
 
 static	void	pgqr_reanalyze(const char *new_query_string);
 static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
+
+static void 	pgqr_incr_rewrite_count(int index);
 
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
 PG_FUNCTION_INFO_V1(pgqr_rules);
@@ -173,6 +176,7 @@ pgqr_shmem_startup(void)
 		{
 			pgqr->rules[i].source_stmt[0] = '\0';
 			pgqr->rules[i].target_stmt[0] = '\0'; 	
+			pgqr->rules[i].rewrite_count = 0;
 		}
 		pgqr->current_rule_number = 0;
 
@@ -379,6 +383,7 @@ static bool pgqr_remove_rule_internal(char *source)
 	{
 		strcpy(pgqr->rules[j].source_stmt, pgqr->rules[j+1].source_stmt);
 		strcpy(pgqr->rules[j].target_stmt, pgqr->rules[j+1].target_stmt);
+		pgqr->rules[j].rewrite_count = pgqr->rules[j+1].rewrite_count;
 	}	
 	pgqr->current_rule_number--;	
 
@@ -417,6 +422,7 @@ static bool pgqr_truncate_rule_internal()
 	{
 		pgqr->rules[i].source_stmt[0] = '\0';
 		pgqr->rules[i].target_stmt[0] = '\0';
+		pgqr->rules[i].rewrite_count = 0;
         }
 	pgqr->current_rule_number = 0;
 
@@ -636,6 +642,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 
 	/* pstate->p_sourcetext is the current query text */	
 	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
+
 	if (pgqr_check_rewrite(pstate->p_sourcetext, &rules_index))
 	{
 		elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=true", 
@@ -650,6 +657,8 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
                                    pstate->p_sourcetext);
 		pgqr_clone_Query(new_static_query, query);
 		statement_rewritten = true;
+		
+		pgqr_incr_rewrite_count(rules_index);
 	} else
 		elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
                              pstate->p_sourcetext);
@@ -660,9 +669,9 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 	if (prev_post_parse_analyze_hook)
 	{
 #if PG_VERSION_NUM < 140000
-	 	prev_post_parse_analyze_hook(pstate, query);
+		prev_post_parse_analyze_hook(pstate, query);
 #else
-		 prev_post_parse_analyze_hook(pstate, query,js);
+		prev_post_parse_analyze_hook(pstate, query,js);
 #endif
 	 }
 
@@ -731,14 +740,13 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
         /* The tupdesc and tuplestore must be created in ecxt_per_query_memory */
         oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
 #if PG_VERSION_NUM <= 120000
-        tupdesc = CreateTemplateTupleDesc(2, false);
+        tupdesc = CreateTemplateTupleDesc(3, false);
 #else
-        tupdesc = CreateTemplateTupleDesc(2);
+        tupdesc = CreateTemplateTupleDesc(3);
 #endif
-        TupleDescInitEntry(tupdesc, (AttrNumber) 1, "source",
-                                           TEXTOID, -1, 0);
-        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "target",
-                                           TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 1, "source", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "target", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 3, "rewrite_count", TEXTOID, -1, 0);
 
         randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
         tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
@@ -752,10 +760,11 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
 
         for (i=0; i < pgqrMaxRules; i++)
         {
-                char            *values[2];
+                char            *values[3];
                 HeapTuple       tuple;
                 char            buf_v1[PGQR_MAX_STMT_LENGTH];
                 char            buf_v2[PGQR_MAX_STMT_LENGTH];
+                char            buf_v3[50];
 		char		*source;
 	        char   		*target;
 		char		*p_source;
@@ -778,6 +787,9 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
                 snprintf(buf_v2, sizeof(buf_v2), "target=%s", p_target);
                 values[1] = buf_v2;
 
+                snprintf(buf_v3, sizeof(buf_v3), "rewrite_count=%d", pgqr->rules[i].rewrite_count);
+                values[2] = buf_v3;
+
         	tuple = BuildTupleFromCStrings(attinmeta, values);
 	        tuplestore_puttuple(tupstore, tuple);
 
@@ -791,5 +803,14 @@ Datum pgqr_rules(PG_FUNCTION_ARGS)
 {
 
         return (pgqr_rules_internal(fcinfo));
+}
+
+static void pgqr_incr_rewrite_count(int index)
+{
+	
+        LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
+        pgqr->rules[index].rewrite_count++ ;
+        LWLockRelease(pgqr->lock);
+
 }
 

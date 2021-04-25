@@ -52,18 +52,18 @@ select pgqr_remove_rule('select 1+1;');
 (1 row)
 
 select pgqr_rules();
-                       pgqr_rules                        
----------------------------------------------------------
- ("source=select 10;","target=select 11;")
- ("source=select x from t;","target=select x,y from t;")
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
+                               pgqr_rules                                
+-------------------------------------------------------------------------
+ ("source=select 10;","target=select 11;",rewrite_count=1)
+ ("source=select x from t;","target=select x,y from t;",rewrite_count=1)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select 1+1;
@@ -80,18 +80,18 @@ select pgqr_remove_rule('select 10;');
 (1 row)
 
 select pgqr_rules();
-                       pgqr_rules                        
----------------------------------------------------------
- ("source=select x from t;","target=select x,y from t;")
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
+                               pgqr_rules                                
+-------------------------------------------------------------------------
+ ("source=select x from t;","target=select x,y from t;",rewrite_count=1)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select 10;
@@ -108,18 +108,18 @@ select pgqr_remove_rule('select x from t;');
 (1 row)
 
 select pgqr_rules();
-        pgqr_rules         
----------------------------
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
- (source=NULL,target=NULL)
+                pgqr_rules                 
+-------------------------------------------
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select x from t;
