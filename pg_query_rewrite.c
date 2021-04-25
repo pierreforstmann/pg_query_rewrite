@@ -111,6 +111,8 @@ static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
 
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
 PG_FUNCTION_INFO_V1(pgqr_rules);
+PG_FUNCTION_INFO_V1(pgqr_remove_rule);
+PG_FUNCTION_INFO_V1(pgqr_truncate_rule);
 
 /*
  *  Estimate shared memory space needed.
@@ -353,6 +355,90 @@ Datum pgqr_add_rule(PG_FUNCTION_ARGS)
 
 }
 
+
+static bool pgqr_remove_rule_internal(char *source)
+{
+
+	int	i, j;
+	bool	found=false;
+
+	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
+
+	for (i = 0; i < pgqr->current_rule_number && found == false; i++)
+	{
+		if (strcmp(pgqr->rules[i].source_stmt, source) == 0)
+			found = true;
+	}
+	if (found == false)
+	{
+		LWLockRelease(pgqr->lock);	
+		ereport(ERROR, (errmsg("Rule for %s not found", source)));		
+	}
+
+	for (j = i - 1; j < pgqr->current_rule_number; j++)	
+	{
+		strcpy(pgqr->rules[j].source_stmt, pgqr->rules[j+1].source_stmt);
+		strcpy(pgqr->rules[j].target_stmt, pgqr->rules[j+1].target_stmt);
+	}	
+	pgqr->current_rule_number--;	
+
+	LWLockRelease(pgqr->lock);	
+	
+	return true;
+
+}
+
+/*
+ * pgqr_remove_rule
+ *
+ * SQL-callable function to remove a SQL translation rule
+ *
+ */
+Datum pgqr_remove_rule(PG_FUNCTION_ARGS)
+{
+
+ 	 char  *source;
+
+         source = PG_GETARG_CSTRING(0);
+         elog(LOG, "pgqr_remove_rule source=%s", source);
+
+         PG_RETURN_BOOL(pgqr_remove_rule_internal(source));	
+
+}
+
+
+static bool pgqr_truncate_rule_internal()
+{
+	int	i;
+
+	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
+
+	for (i=0; i < pgqrMaxRules; i++)
+	{
+		pgqr->rules[i].source_stmt[0] = '\0';
+		pgqr->rules[i].target_stmt[0] = '\0';
+        }
+	pgqr->current_rule_number = 0;
+
+	LWLockRelease(pgqr->lock);	
+
+	return true;
+}
+
+/*
+ *  pgqr_truncate_rule
+ *  
+ *  SQL-callable function to remove all SQL translation rules
+ * 
+ */
+Datum pgqr_truncate_rule(PG_FUNCTION_ARGS)
+{
+
+         elog(LOG, "pgqr_truncate_rule");
+
+         PG_RETURN_BOOL(pgqr_truncate_rule_internal());
+
+}
 
 
 /*

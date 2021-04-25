@@ -1,0 +1,156 @@
+drop extension if exists pg_query_rewrite;
+--
+create extension pg_query_rewrite;
+--
+drop table if exists t;
+create table t(x int, y int);
+--
+insert into t values(1,2);
+--
+select pgqr_truncate_rule();
+ pgqr_truncate_rule 
+--------------------
+ t
+(1 row)
+
+--
+select pgqr_add_rule('select 10;','select 11;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select pgqr_add_rule('select 1+1;','select 1+2;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select pgqr_add_rule('select x from t;','select x,y from t;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+--
+select 10;
+ ?column? 
+----------
+       11
+(1 row)
+
+select 1+1;
+ ?column? 
+----------
+        3
+(1 row)
+
+select x from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+--
+select pgqr_remove_rule('select 1+1;');
+ pgqr_remove_rule 
+------------------
+ t
+(1 row)
+
+select pgqr_rules();
+                       pgqr_rules                        
+---------------------------------------------------------
+ ("source=select 10;","target=select 11;")
+ ("source=select x from t;","target=select x,y from t;")
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+(10 rows)
+
+select 1+1;
+ ?column? 
+----------
+        2
+(1 row)
+
+--
+select pgqr_remove_rule('select 10;');
+ pgqr_remove_rule 
+------------------
+ t
+(1 row)
+
+select pgqr_rules();
+                       pgqr_rules                        
+---------------------------------------------------------
+ ("source=select x from t;","target=select x,y from t;")
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+(10 rows)
+
+select 10;
+ ?column? 
+----------
+       10
+(1 row)
+
+--
+select pgqr_remove_rule('select x from t;');
+ pgqr_remove_rule 
+------------------
+ t
+(1 row)
+
+select pgqr_rules();
+        pgqr_rules         
+---------------------------
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+ (source=NULL,target=NULL)
+(10 rows)
+
+select x from t;
+ x 
+---
+ 1
+(1 row)
+
+--
+select x from t;
+ x 
+---
+ 1
+(1 row)
+
+select 1+1;
+ ?column? 
+----------
+        2
+(1 row)
+
+select 10;
+ ?column? 
+----------
+       10
+(1 row)
+
