@@ -7,13 +7,6 @@ create table t(x int, y int);
 --
 insert into t values(1,2);
 --
-select pgqr_truncate_rule();
- pgqr_truncate_rule 
---------------------
- t
-(1 row)
-
---
 select pgqr_add_rule('select 10;','select 11;');
  pgqr_add_rule 
 ---------------

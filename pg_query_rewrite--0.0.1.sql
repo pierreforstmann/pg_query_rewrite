@@ -16,3 +16,5 @@ CREATE FUNCTION pgqr_remove_rule(cstring) RETURNS BOOLEAN
 CREATE FUNCTION pgqr_truncate_rule() RETURNS BOOLEAN
  AS 'pg_query_rewrite.so', 'pgqr_truncate_rule'
  LANGUAGE C STRICT;
+--
+select pgqr_truncate_rule();
