@@ -68,5 +68,15 @@ Run with psql:
 ----------
        11
 (1 row)
+```
+## Limitations
+
+SQL translations rules are available for all databases: there is not way to restrict a rule to a give database.
+<br>
+Maximum SQL statement length is hard-coded: currently the maximum statement lenght is 100.
+<br>
+SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is sensitive at case level, space level, etc.)
+<br>
+SQL translation rules are only stored in shared memory: there is no way to have persistent SQL translation rules.
 
 
