@@ -21,7 +21,7 @@ At server level with `shared_preload_libraries` parameter: <br>
 And following SQL statement must be run: <br>
 `create extension pg_query_rewrite;`
 
-This extension is installed as instance level: it does not need to be installed in each database. <br>
+This extension is installed at instance level: it does not need to be installed in each database. <br>
 
 ## Usage
 pg_query_rewrite (PGQR) has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
