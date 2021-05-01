@@ -28,9 +28,9 @@ pg_query_rewrite (PGQR) has a single GUC : `pg_query_rewrite.max_rules` which is
 This extension is enabled if the related library is loaded and if `pg_query_rewrite.max_rules` parameter is set.
 <br>
 <br>
-To create a new rule to translate SQL statement <source> into SQL statement <target> run `select pgqr_add_rule(<source>, <target>)` : rule is available to all database backends as soon as the function call as completed.
+To create a new rule to translate SQL statement `<source>` into SQL statement `<target>` run `select pgqr_add_rule(<source>, <target>)` : rule is available to all database backends as soon as the function call as completed.
 <br>
-To remove a translation rule for SQL statement <source>, run `select pgqr_remove_rule(<source>);'`.
+To remove a translation rule for SQL statement `<source>`, run `select pgqr_remove_rule(<source>);'`.
 <br>
 To remove all existing translation rules, run `select pgqr_truncate_rule;`.
 <br>
