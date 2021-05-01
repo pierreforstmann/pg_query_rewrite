@@ -21,61 +21,30 @@ At server level with `shared_preload_libraries` parameter: <br>
 And following SQL statement must be run: <br>
 `create extension pg_query_rewrite;`
 
-This extension must be installed in each database where it is intented to be used. <br>
+This extension is installed as instance level: it does not need to be installed in each database. <br>
 
 # Usage
-pg_query_rewrite has no GUC.<br>
-The extension is enabled if the related libraries is loaded and the table `pg_rewrite_rule` exists in the related database.<br>
+pg_query_rewrite (PGQR) has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
 <br>
-Query rewrite rules must be inserted in the table `pg_query_rule` which has the following structure: <br>
-```
-# \d pg_rewrite_rule 
-                               Table "public.pg_rewrite_rule" 
-   Column    |  Type   | Collation | Nullable |                   Default                   
--------------+---------+-----------+----------+---------------------------------------------
- id          | integer |           | not null | nextval('pg_rewrite_rule_id_seq'::regclass) 
- pattern     | text    |           | not null | 
- replacement | text    |           | not null | 
- enabled     | boolean |           | not null | 
-```
-
-Note that the number of rules is currently hard coded in the extension code and is currently set to 10. <br>
-Extension behaviour is not defined it the number of rows in pg_rewrite_rule exceeds this maximum. <br>
+This extension is enabled if the related library is loaded and if `pg_query_rewrite.max_rules` parameter is set.
 <br>
-The query rewrites rules are cached in the backend private memory: if the rules are updated in the current database session,
-only new database session will take care of the new state of rules (whether a new rule is created, updated
-or deleted) - existing database session including the current one cannot take into account the updated rules.<br>
+PGQR rules are cached in shared memory and are available in all database backends as soon as rule as been created with `pgqr_add_rule` function.
 
 ## Example
 
 In postgresql.conf:
 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
+`pg_query_rewrite.max_rules=10`
 
-In `pg_rewrite_rule` table:
-
+Run with psql:
 ```
-# select * from pg_rewrite_rule;` 
- id |   pattern   | replacement | enabled  
-----+-------------+-------------+---------
- 38 | select 1+1; | select 1+2; | t      
-(1 row)
-```
-
-With above setup:
-
-```
-# select 1+1;
- ?column? `
-----------
-        3
-(1 row)
-```
-
-```
-# select (1 + 1);
+# create extension pg_query_rewrite;
+# select pgqr_add_rule('select 10;','select 11;');
+# select 10;
  ?column? 
 ----------
-        3
-(1 row)   
-```
+       11
+(1 row)
+
+
