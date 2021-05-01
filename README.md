@@ -27,6 +27,7 @@ This extension is installed as instance level: it does not need to be installed 
 pg_query_rewrite (PGQR) has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
 This extension is enabled if the related library is loaded and if `pg_query_rewrite.max_rules` parameter is set.
 <br>
+<br>
 PGQR rules are cached in shared memory and are available in all database backends as soon as rule as been created with `pgqr_add_rule` function.
 
 ## Example
