@@ -37,7 +37,7 @@ To create a new rule to translate SQL statement `<source>` into SQL statement `<
 To remove a translation rule for SQL statement `<source>`, run:
 <br>
 <br>
-`select pgqr_remove_rule(<source>);'`
+`select pgqr_remove_rule(<source>);`
 <br>
 <br>
 To remove all existing translation rules, run:
