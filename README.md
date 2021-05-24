@@ -99,4 +99,4 @@ CREATE EXTENSION
 * SQL translations rules are available for all databases: there is no way to restrict a rule to a given database.
 * Maximum SQL statement length is hard-coded: currently the maximum statement length is 100.
 * SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is case sensitive, space sensitive, semicolon sensitive, etc.)
-* SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`] (https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
+* SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`](https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
