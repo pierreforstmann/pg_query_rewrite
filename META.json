@@ -2,7 +2,7 @@
    "name": "pg_query_rewrite",
    "abstract": "rewrites SQL statement",
    "version": "0.0.1",
-   "release_status":"not stable",
+   "release_status":"unstable",
    "maintainer": [
       "Pierre Forstmann"
    ],
