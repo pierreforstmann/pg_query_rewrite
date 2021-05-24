@@ -47,7 +47,7 @@
 
 PG_MODULE_MAGIC;
 
-#define	PGQR_MAX_STMT_LENGTH	100
+#define	PGQR_MAX_STMT_LENGTH	32768	
 
 static	bool 	pgqr_enabled = false;
 /*
