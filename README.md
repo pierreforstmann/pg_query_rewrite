@@ -14,15 +14,11 @@ This module can be built using the standard PGXS infrastructure. For this to wor
 
 ## PostgreSQL setup
 
-Extension must be loaded:
-
-At server level with `shared_preload_libraries` parameter: <br> 
+Extension must be loaded at server level with `shared_preload_libraries` parameter: <br> 
 `shared_preload_libraries = 'pg_query_rewrite'` <br>
-And following SQL statement must be run: <br>
-`create extension pg_query_rewrite;`
 
-This extension needs to be installed in each database with: <br>
-`CREATE EXTENSION pg_query_rewrite;`
+Following SQL statement must be run in each database: <br>
+`create extension pg_query_rewrite;`
 
  `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12 and 13.
 
