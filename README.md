@@ -1,5 +1,5 @@
 # pg_query_rewrite
-pg_query_rewrite is a PostgreSQL extension which allows to translate a given source SQL statement into another pre-defined SQL statement.
+`pg_query_rewrite`  is a PostgreSQL extension which allows to translate a given source SQL statement into another pre-defined SQL statement.
 
 
 # Installation
@@ -23,8 +23,11 @@ And following SQL statement must be run: <br>
 
 This extension is installed at instance level: it does not need to be installed in each database. <br>
 
+ `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12 and 13.
+
 ## Usage
-pg_query_rewrite (PGQR) has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
+`pg_query_rewrite` has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
+<br>
 This extension is enabled if the related library is loaded and if `pg_query_rewrite.max_rules` parameter is set.
 <br>
 <br>
@@ -62,18 +65,38 @@ In postgresql.conf:
 Run with psql:
 ```
 # create extension pg_query_rewrite;
+CREATE EXTENSION
 # select pgqr_add_rule('select 10;','select 11;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
 # select 10;
  ?column? 
 ----------
        11
 (1 row)
+
+# select pgqr_rules();
+                        pgqr_rules                         
+-----------------------------------------------------------
+ ("source=select 10;","target=select 11;",rewrite_count=1)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+ (source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
 ```
 ## Limitations
 
 * SQL translations rules are available for all databases: there is no way to restrict a rule to a given database.
 * Maximum SQL statement length is hard-coded: currently the maximum statement length is 100.
 * SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is case sensitive, space sensitive, semicolon sensitive, etc.)
-* SQL translation rules are only stored in shared memory: there is no way to have persistent SQL translation rules.
-
-
+* SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`] (https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
