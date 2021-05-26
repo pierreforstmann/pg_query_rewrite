@@ -5,8 +5,6 @@ create extension pg_query_rewrite;
 drop table if exists t;
 create table t(c int);
 --
-\df
---
 select pgqr_add_rule('select 
 c as cabcdefgh1,
 c as cabcdefgh2,

@@ -5,17 +5,6 @@ create extension pg_query_rewrite;
 drop table if exists t;
 create table t(c int);
 --
-\df
-                              List of functions
- Schema |        Name        | Result data type | Argument data types | Type 
---------+--------------------+------------------+---------------------+------
- public | pgqr_add_rule      | boolean          | cstring, cstring    | func
- public | pgqr_remove_rule   | boolean          | cstring             | func
- public | pgqr_rules         | SETOF record     |                     | func
- public | pgqr_truncate_rule | boolean          |                     | func
-(4 rows)
-
---
 select pgqr_add_rule('select 
 c as cabcdefgh1,
 c as cabcdefgh2,
