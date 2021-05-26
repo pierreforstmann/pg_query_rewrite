@@ -47,7 +47,8 @@
 
 PG_MODULE_MAGIC;
 
-#define	PGQR_MAX_STMT_LENGTH	32768	
+#define	PGQR_MAX_STMT_LENGTH		32768	
+#define	PGQR_MAX_STMT_BUF_LENGTH	(PGQR_MAX_STMT_LENGTH + 10)
 
 static	bool 	pgqr_enabled = false;
 /*
@@ -315,14 +316,14 @@ static bool pgqr_add_rule_internal(char *source, char *target)
 		ereport(ERROR, (errmsg("Maximum rule number is reached %d", pgqrMaxRules)));
 	}
 
-	if (strlen(source) > PGQR_MAX_STMT_LENGTH)
+	if (strlen(source) > PGQR_MAX_STMT_LENGTH - 1)
 	{
 		LWLockRelease(pgqr->lock);
 		ereport(ERROR, (errmsg("Source statement length %zu is greater than %d", 
                                strlen(source), PGQR_MAX_STMT_LENGTH)));
 	}
 
-	if (strlen(target) > PGQR_MAX_STMT_LENGTH)
+	if (strlen(target) > PGQR_MAX_STMT_LENGTH - 1)
 	{
 		LWLockRelease(pgqr->lock);
 		ereport(ERROR, (errmsg("Target statement length %zu is greater than %d", 
@@ -762,8 +763,8 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
         {
                 char            *values[3];
                 HeapTuple       tuple;
-                char            buf_v1[PGQR_MAX_STMT_LENGTH];
-                char            buf_v2[PGQR_MAX_STMT_LENGTH];
+                char            buf_v1[PGQR_MAX_STMT_BUF_LENGTH];
+                char            buf_v2[PGQR_MAX_STMT_BUF_LENGTH];
                 char            buf_v3[50];
 		char		*source;
 	        char   		*target;
