@@ -76,24 +76,23 @@ CREATE EXTENSION
 (1 row)
 
 # select pgqr_rules();
-                        pgqr_rules                         
------------------------------------------------------------
- ("source=select 10;","target=select 11;",rewrite_count=1)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+                                pgqr_rules                                
+--------------------------------------------------------------------------
+ (datname=pierre,"source=select 10;","target=select 11;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 ```
 ## Limitations
 
-* SQL translations rules are available for all databases: there is no way to restrict a rule to a given database.
 * Maximum SQL statement length is hard-coded: currently the maximum statement length is 32K.
 * SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is case sensitive, space sensitive, semicolon sensitive, etc.)
 * SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`](https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
