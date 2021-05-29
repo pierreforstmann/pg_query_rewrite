@@ -1,6 +1,12 @@
 drop extension if exists pg_query_rewrite;
 --
 create extension pg_query_rewrite;
+select pgqr_truncate_rule();
+ pgqr_truncate_rule 
+--------------------
+ t
+(1 row)
+
 --
 drop table if exists t;
 create table t(c int);
@@ -3473,7 +3479,7 @@ ERROR:  Source statement length 32769 is greater than 32768
 select pgqr_rules();
                         pgqr_rules                         
 -----------------------------------------------------------
- ("source=select                                          +
+ (datname=contrib_regression,"source=select               +
  c as cabcdefgh1,                                         +
  c as cabcdefgh2,                                         +
  c as cabcdefgh3,                                         +
@@ -5199,15 +5205,15 @@ select pgqr_rules();
  c = 57 or                                                +
  c = 58 or                                                +
  c is null or c=0;","target=select 1663;",rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 --
@@ -6946,7 +6952,7 @@ c is null or c=0;
 select pgqr_rules();
                         pgqr_rules                         
 -----------------------------------------------------------
- ("source=select                                          +
+ (datname=contrib_regression,"source=select               +
  c as cabcdefgh1,                                         +
  c as cabcdefgh2,                                         +
  c as cabcdefgh3,                                         +
@@ -8672,15 +8678,15 @@ select pgqr_rules();
  c = 57 or                                                +
  c = 58 or                                                +
  c is null or c=0;","target=select 1663;",rewrite_count=1)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 --

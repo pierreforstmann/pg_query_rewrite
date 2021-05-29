@@ -1,6 +1,12 @@
 drop extension if exists pg_query_rewrite;
 --
 create extension pg_query_rewrite;
+select pgqr_truncate_rule();
+ pgqr_truncate_rule 
+--------------------
+ t
+(1 row)
+
 --
 drop table if exists t;
 create table t(x int, y int);
@@ -52,18 +58,18 @@ select pgqr_remove_rule('select 1+1;');
 (1 row)
 
 select pgqr_rules();
-                               pgqr_rules                                
--------------------------------------------------------------------------
- ("source=select 10;","target=select 11;",rewrite_count=1)
- ("source=select x from t;","target=select x,y from t;",rewrite_count=1)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+                                             pgqr_rules                                             
+----------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=select 10;","target=select 11;",rewrite_count=1)
+ (datname=contrib_regression,"source=select x from t;","target=select x,y from t;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select 1+1;
@@ -80,18 +86,18 @@ select pgqr_remove_rule('select 10;');
 (1 row)
 
 select pgqr_rules();
-                               pgqr_rules                                
--------------------------------------------------------------------------
- ("source=select x from t;","target=select x,y from t;",rewrite_count=1)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+                                             pgqr_rules                                             
+----------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=select x from t;","target=select x,y from t;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select 10;
@@ -108,18 +114,18 @@ select pgqr_remove_rule('select x from t;');
 (1 row)
 
 select pgqr_rules();
-                pgqr_rules                 
--------------------------------------------
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
- (source=NULL,target=NULL,rewrite_count=0)
+                       pgqr_rules                       
+--------------------------------------------------------
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
 (10 rows)
 
 select x from t;

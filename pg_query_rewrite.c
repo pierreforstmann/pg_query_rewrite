@@ -44,6 +44,7 @@
 #include "unistd.h"
 #include "funcapi.h"
 #include "catalog/pg_type.h"
+#include "commands/dbcommands.h"
 
 PG_MODULE_MAGIC;
 
@@ -78,6 +79,7 @@ static ExecutorStart_hook_type prev_executor_start_hook = NULL;
 
 typedef struct pgqrSharedItem
 {
+	Oid	dbid;
 	char	source_stmt[PGQR_MAX_STMT_LENGTH];
 	char	target_stmt[PGQR_MAX_STMT_LENGTH];
 	int	rewrite_count;
@@ -330,6 +332,7 @@ static bool pgqr_add_rule_internal(char *source, char *target)
                                strlen(target), PGQR_MAX_STMT_LENGTH)));
 	}
 
+	pgqr->rules[pgqr->current_rule_number].dbid = MyDatabaseId;
 	strcpy(pgqr->rules[pgqr->current_rule_number].source_stmt, source);
 	strcpy(pgqr->rules[pgqr->current_rule_number].target_stmt, target);
 	pgqr->current_rule_number++;
@@ -382,6 +385,7 @@ static bool pgqr_remove_rule_internal(char *source)
 
 	for (j = i - 1; j < pgqr->current_rule_number; j++)	
 	{
+		pgqr->rules[j].dbid = pgqr->rules[j+1].dbid;
 		strcpy(pgqr->rules[j].source_stmt, pgqr->rules[j+1].source_stmt);
 		strcpy(pgqr->rules[j].target_stmt, pgqr->rules[j+1].target_stmt);
 		pgqr->rules[j].rewrite_count = pgqr->rules[j+1].rewrite_count;
@@ -421,6 +425,7 @@ static bool pgqr_truncate_rule_internal()
 
 	for (i=0; i < pgqrMaxRules; i++)
 	{
+		pgqr->rules[i].dbid = 0;
 		pgqr->rules[i].source_stmt[0] = '\0';
 		pgqr->rules[i].target_stmt[0] = '\0';
 		pgqr->rules[i].rewrite_count = 0;
@@ -466,7 +471,8 @@ static bool pgqr_check_rewrite(const char *current_query_source, int *rule_index
 	 */
 
 	for (i = 0 ; i < pgqrMaxRules; i++)	
-		if (strcmp(current_query_source, pgqr->rules[i].source_stmt) == 0)
+		if (	pgqr->rules[i].dbid == MyDatabaseId &&
+			strcmp(current_query_source, pgqr->rules[i].source_stmt) == 0)
 		{
 			*rule_index = i;
 			return true;
@@ -741,13 +747,14 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
         /* The tupdesc and tuplestore must be created in ecxt_per_query_memory */
         oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
 #if PG_VERSION_NUM <= 120000
-        tupdesc = CreateTemplateTupleDesc(3, false);
+        tupdesc = CreateTemplateTupleDesc(4, false);
 #else
-        tupdesc = CreateTemplateTupleDesc(3);
+        tupdesc = CreateTemplateTupleDesc(4);
 #endif
-        TupleDescInitEntry(tupdesc, (AttrNumber) 1, "source", TEXTOID, -1, 0);
-        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "target", TEXTOID, -1, 0);
-        TupleDescInitEntry(tupdesc, (AttrNumber) 3, "rewrite_count", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 1, "datname", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 2, "source", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 3, "target", TEXTOID, -1, 0);
+        TupleDescInitEntry(tupdesc, (AttrNumber) 4, "rewrite_count", TEXTOID, -1, 0);
 
         randomAccess = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
         tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
@@ -761,11 +768,12 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
 
         for (i=0; i < pgqrMaxRules; i++)
         {
-                char            *values[3];
+                char            *values[4];
                 HeapTuple       tuple;
-                char            buf_v1[PGQR_MAX_STMT_BUF_LENGTH];
+                char            buf_v1[NAMEDATALEN];
                 char            buf_v2[PGQR_MAX_STMT_BUF_LENGTH];
-                char            buf_v3[50];
+                char            buf_v3[PGQR_MAX_STMT_BUF_LENGTH];
+                char            buf_v4[50];
 		char		*source;
 	        char   		*target;
 		char		*p_source;
@@ -781,15 +789,22 @@ static Datum pgqr_rules_internal(FunctionCallInfo fcinfo)
                 if (strlen(target) == 0)
                         p_target = null_string;
                 else    p_target = target;
-                
-		snprintf(buf_v1, sizeof(buf_v1), "source=%s", p_source);
+               
+		if (pgqr->rules[i].dbid != 0) 
+			snprintf(buf_v1, sizeof(buf_v1), "datname=%s", get_database_name(pgqr->rules[i].dbid));
+		else
+			snprintf(buf_v1, sizeof(buf_v1), "datname=%s", null_string);
+			
                 values[0] = buf_v1;
 
-                snprintf(buf_v2, sizeof(buf_v2), "target=%s", p_target);
+		snprintf(buf_v2, sizeof(buf_v2), "source=%s", p_source);
                 values[1] = buf_v2;
 
-                snprintf(buf_v3, sizeof(buf_v3), "rewrite_count=%d", pgqr->rules[i].rewrite_count);
+                snprintf(buf_v3, sizeof(buf_v3), "target=%s", p_target);
                 values[2] = buf_v3;
+
+                snprintf(buf_v4, sizeof(buf_v4), "rewrite_count=%d", pgqr->rules[i].rewrite_count);
+                values[3] = buf_v4;
 
         	tuple = BuildTupleFromCStrings(attinmeta, values);
 	        tuplestore_puttuple(tupstore, tuple);
