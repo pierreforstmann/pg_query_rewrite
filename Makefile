@@ -8,7 +8,7 @@ PGFILEDESC = "pg_query_rewrite - translate SQL statements"
 
 
 REGRESS_OPTS = --temp-instance=/tmp/5454 --port=5454 --temp-config pg_query_rewrite.conf
-REGRESS=test0 test1 test2 test3
+REGRESS=test0 test1 test2 test3 test4
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

@@ -1,0 +1,200 @@
+drop database db1;
+ERROR:  database "db1" does not exist
+drop database db2;
+ERROR:  database "db2" does not exist
+select pgqr_truncate_rule();
+ pgqr_truncate_rule 
+--------------------
+ t
+(1 row)
+
+--
+--
+create database db1;
+create database db2;
+--
+--
+\c db1
+create extension pg_query_rewrite;
+select pgqr_add_rule('select 1;','select 11;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select 1;
+ ?column? 
+----------
+       11
+(1 row)
+
+select pgqr_rules();
+                              pgqr_rules                              
+----------------------------------------------------------------------
+ (datname=db1,"source=select 1;","target=select 11;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
+--
+\c db2
+create extension pg_query_rewrite;
+select pgqr_add_rule('select 2;','select 22;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+select 2;
+ ?column? 
+----------
+       22
+(1 row)
+
+select pgqr_rules();
+                              pgqr_rules                              
+----------------------------------------------------------------------
+ (datname=db1,"source=select 1;","target=select 11;",rewrite_count=1)
+ (datname=db2,"source=select 2;","target=select 22;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
+--
+\c db1
+select 1;
+ ?column? 
+----------
+       11
+(1 row)
+
+select 2;
+ ?column? 
+----------
+        2
+(1 row)
+
+select pgqr_rules();
+                              pgqr_rules                              
+----------------------------------------------------------------------
+ (datname=db1,"source=select 1;","target=select 11;",rewrite_count=2)
+ (datname=db2,"source=select 2;","target=select 22;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
+--
+\c db2
+select 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+select 2;
+ ?column? 
+----------
+       22
+(1 row)
+
+--
+select pgqr_remove_rule('select 2;');
+ pgqr_remove_rule 
+------------------
+ t
+(1 row)
+
+select 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+select 2;
+ ?column? 
+----------
+        2
+(1 row)
+
+select pgqr_rules();
+                              pgqr_rules                              
+----------------------------------------------------------------------
+ (datname=db1,"source=select 1;","target=select 11;",rewrite_count=2)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
+--
+--
+\c db1
+select 1;
+ ?column? 
+----------
+       11
+(1 row)
+
+select 2;
+ ?column? 
+----------
+        2
+(1 row)
+
+select pgqr_remove_rule('select 1;');
+ pgqr_remove_rule 
+------------------
+ t
+(1 row)
+
+select 1;
+ ?column? 
+----------
+        1
+(1 row)
+
+select 2;
+ ?column? 
+----------
+        2
+(1 row)
+
+select pgqr_rules();
+                       pgqr_rules                       
+--------------------------------------------------------
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
