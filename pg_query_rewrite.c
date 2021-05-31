@@ -578,50 +578,48 @@ static void pgqr_clone_ParseState(ParseState *source, ParseState *target)
 static void pgqr_reanalyze(const char *new_query_string)
 {
 
-	int num_stmt;
+	/* 
+ 	 * >>> FROM parse_analyze in src/backend/parser/analyze.c <<< 
+ 	 */
 
-	/* >>> FROM parse_analyze in src/backend/parser/analyze.c <<< */
-	ParseState *new_pstate = make_parsestate(NULL);
-	Query	*new_query = (Query *)NULL;
+	ParseState 	*new_pstate = make_parsestate(NULL);
+	Query		*new_query = (Query *)NULL;
 
-	List	*raw_parsetree_list;
-	ListCell *lc1; 
+#if PG_VERSION_NUM >= 100000
+	RawStmt		*new_parsetree;
+#else
+	Node      	*new_parsetree;
+#endif
+	List		*raw_parsetree_list;
+	ListCell 	*lc1; 
 
 	elog(DEBUG1, "pg_query_rewrite: pgqr_reanalyze: entry");
 	new_pstate->p_sourcetext = new_query_string;
 
-	/* missing data: 
+	/* 
+ 	 * missing data: 
          * 1. numParams 
          * 2. ParamTypes 
          * 3. queryEnv
          */
 
-	/* >>> FROM execute_sql_tring in src/backend/commands/extension.c <<< */
-	/*
- 	 * Parse the SQL string into a list of raw parse trees.
- 	 *
- 	 */
+	new_parsetree =  NULL;
 	raw_parsetree_list = pg_parse_query(new_query_string);	
-	num_stmt = 0;
+
+	/*
+ 	 * we assume only one SQL statement
+ 	 */
+
 	foreach(lc1, raw_parsetree_list)
 	{
 #if PG_VERSION_NUM >= 100000
-		RawStmt    *parsetree = lfirst_node(RawStmt, lc1);
+		new_parsetree = lfirst_node(RawStmt, lc1);
 #else
-		 Node       *parsetree = (Node *) lfirst(lc1);
+		new_parsetree = (Node *) lfirst(lc1);
 #endif
-		new_query = transformTopLevelStmt(new_pstate, parsetree);	
-		num_stmt++;
-	}
-	if (num_stmt > 1)
-	{
-		ereport(ERROR, 
-                        (errmsg 
-                         ("pg_query_rewrite: cannot rewrite multiple commands: %s", 
-                          new_query_string)));
 	}
 
-	/* cannot run free_parsestate(new_pstate) */
+	new_query = transformTopLevelStmt(new_pstate, new_parsetree);	
 
 	new_static_pstate = new_pstate;
 	new_static_query = new_query;
@@ -658,6 +656,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
  		** analyze destination statement 
 		*/
 		pgqr_reanalyze(pgqr->rules[rules_index].target_stmt);
+
 		/* clone data */
 		pgqr_clone_ParseState(new_static_pstate, pstate);
 		elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: rewrite=true pstate->p_source_text %s",
@@ -666,6 +665,8 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 		statement_rewritten = true;
 		
 		pgqr_incr_rewrite_count(rules_index);
+
+		free_parsestate(new_static_pstate); 
 	} else
 		elog(DEBUG1,"pg_query_rewrite: pgqr_to_rewrite %s: rc=false", 
                              pstate->p_sourcetext);
@@ -678,7 +679,7 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 #if PG_VERSION_NUM < 140000
 		prev_post_parse_analyze_hook(pstate, query);
 #else
-		prev_post_parse_analyze_hook(pstate, query,js);
+		prev_post_parse_analyze_hook(pstate, query, js);
 #endif
 	 }
 

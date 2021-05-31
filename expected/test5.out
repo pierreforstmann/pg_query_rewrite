@@ -1,0 +1,53 @@
+drop extension if exists pg_query_rewrite;
+--
+create extension pg_query_rewrite;
+select pgqr_truncate_rule();
+ pgqr_truncate_rule 
+--------------------
+ t
+(1 row)
+
+--
+drop table if exists t;
+create table t(x int, y int);
+--
+insert into t values(1,2);
+--
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+--
+select pgqr_add_rule('delete from t;','delete from t where 1=0;');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+--
+delete from t;
+--
+select * from t;
+ x | y 
+---+---
+ 1 | 2
+(1 row)
+
+--
+select pgqr_rules();
+                                               pgqr_rules                                               
+--------------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=delete from t;","target=delete from t where 1=0;",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
