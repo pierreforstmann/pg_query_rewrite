@@ -12,18 +12,18 @@ select pgqr_truncate_rule();
 drop table if exists t;
 create table t(i int);
 --
-drop function if exists f;
-NOTICE:  function f() does not exist, skipping
-create function f(IN p int, OUT i int) returns int as $$
+drop function if exists fs;
+NOTICE:  function fs() does not exist, skipping
+create function fs(IN p int, OUT i int) returns int as $$
 begin
-    insert into t(i) values (f.p) returning t.i into f.i;
+    insert into t(i) values (fs.p) returning t.i into fs.i;
 end$$
 language plpgsql;
 --
-select f(1);
- f 
----
- 1
+select fs(1);
+ fs 
+----
+  1
 (1 row)
 
 select * from t;
@@ -48,24 +48,24 @@ select pgqr_rules();
 (10 rows)
 
 --
-select pgqr_add_rule('insert into t(i) values (f.p) returning t.i', 'insert into t(i) values(2) returning t.i');
+select pgqr_add_rule('insert into t(i) values (fs.p) returning t.i', 'insert into t(i) values(2) returning t.i');
  pgqr_add_rule 
 ---------------
  t
 (1 row)
 
 --
-drop function f;
-create function f(IN p int, OUT i int) returns int as $$
+drop function fs;
+create function fs(IN p int, OUT i int) returns int as $$
 begin
-    insert into t(i) values (f.p) returning t.i into f.i;
+    insert into t(i) values (fs.p) returning t.i into fs.i;
 end$$
 language plpgsql;
 --
-select f(1);
- f 
----
- 2
+select fs(1);
+ fs 
+----
+  2
 (1 row)
 
 select * from t;
@@ -76,9 +76,9 @@ select * from t;
 (2 rows)
 
 select pgqr_rules();
-                                                                     pgqr_rules                                                                      
------------------------------------------------------------------------------------------------------------------------------------------------------
- (datname=contrib_regression,"source=insert into t(i) values (f.p) returning t.i","target=insert into t(i) values(2) returning t.i",rewrite_count=1)
+                                                                      pgqr_rules                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=insert into t(i) values (fs.p) returning t.i","target=insert into t(i) values(2) returning t.i",rewrite_count=1)
  (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
  (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
  (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
@@ -91,3 +91,89 @@ select pgqr_rules();
 (10 rows)
 
 --
+--
+--
+truncate table t;
+select fs(1);
+ fs 
+----
+  2
+(1 row)
+
+select * from t;
+ i 
+---
+ 2
+(1 row)
+
+--
+drop function if exists fd;
+NOTICE:  function fd() does not exist, skipping
+create function fd(IN p int, OUT i int) returns int as $$
+begin
+    execute 'select count(*) from t where i = ' || p into fd.i using fd.p;
+end$$
+language plpgsql;
+--
+select fd(2);
+ fd 
+----
+  1
+(1 row)
+
+select * from t;
+ i 
+---
+ 2
+(1 row)
+
+select pgqr_rules();
+                                                                      pgqr_rules                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=insert into t(i) values (fs.p) returning t.i","target=insert into t(i) values(2) returning t.i",rewrite_count=2)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
+--
+select pgqr_add_rule('select count(*) from t where i = 2', 'select count(*) from t where i = 3');
+ pgqr_add_rule 
+---------------
+ t
+(1 row)
+
+--
+select fd(2);
+ fd 
+----
+  0
+(1 row)
+
+select * from t;
+ i 
+---
+ 2
+(1 row)
+
+select pgqr_rules();
+                                                                      pgqr_rules                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ (datname=contrib_regression,"source=insert into t(i) values (fs.p) returning t.i","target=insert into t(i) values(2) returning t.i",rewrite_count=2)
+ (datname=contrib_regression,"source=select count(*) from t where i = 2","target=select count(*) from t where i = 3",rewrite_count=1)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+ (datname=NULL,source=NULL,target=NULL,rewrite_count=0)
+(10 rows)
+
