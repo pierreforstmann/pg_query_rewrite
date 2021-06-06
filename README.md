@@ -93,6 +93,7 @@ CREATE EXTENSION
 ```
 ## Limitations
 
+* SQL statements using parameters are not supported (because `post_parse_analyze_hook` function has only access to `pstate` and `query` parameters and not to `ParamTypes` and `numParams` only available in `parse_analyze`).
 * Maximum SQL statement length is hard-coded: currently the maximum statement length is 32K.
 * SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is case sensitive, space sensitive, semicolon sensitive, etc.)
 * SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`](https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
