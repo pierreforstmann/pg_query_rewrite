@@ -4,6 +4,8 @@ This release supports rule scope at database level:
 - a rule is only valid in database used when rule is added
 - pgqr_rules() displays all rules for all databases with datname field defining database scope.
 
-SQL translation rule is also tested in procedural SQL and should work.
+SQL translation rule in procedural SQL is also tested and should work.
+
+Error message 'relcache reference leak: relation "..." not closed' has been fixed.
 
 Limitation about SQL statement using parameters has been added to README.
