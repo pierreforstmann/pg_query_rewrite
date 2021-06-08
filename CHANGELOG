@@ -1,0 +1,9 @@
+08-JUN-2021 - v0.0.2
+
+This release supports rule scope at database level:
+- a rule is only valid in database used when rule is added
+- pgqr_rules() displays all rules for all databases with datname field defining database scope.
+
+SQL translation rule is also tested in procedural SQL and should work.
+
+Limitation about SQL statement using parameters has been added to README.
