@@ -1,0 +1,41 @@
+--
+-- test7.sql
+--
+-- can triggers SIGSEGV in pqgr_analyze only with log_min_messages = debug1
+-- in
+--
+-- if (pstate->p_ref_hook_state != NULL
+--
+--            /*
+--            ** CREATE PROCEDURE with 0 parameter
+--            */
+--
+--            && ((VarParamState *)(pstate->p_ref_hook_state))->numParams != NULL)
+--        {
+--                elog(DEBUG1, "pgqr_analyze: numParams=%d",
+--                        *((VarParamState *)(pstate->p_ref_hook_state))->numParams);
+--        }
+--
+-- 
+--
+create or replace procedure p7()
+language plpgsql
+as $$
+declare 
+ r record;
+begin
+ for r in (select datname from pg_database)
+ loop
+  raise notice 'r.datname %', r.datname;
+ end loop;
+end;
+$$;
+--
+call p7();
+NOTICE:  r.datname postgres
+NOTICE:  r.datname contrib_regression
+NOTICE:  r.datname template1
+NOTICE:  r.datname template0
+NOTICE:  r.datname db1
+NOTICE:  r.datname db2
+--

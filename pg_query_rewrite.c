@@ -46,6 +46,22 @@
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
 
+/* 
+ * from parse_param.c
+ */
+#include "parser/parse_param.h"
+typedef struct FixedParamState
+ {
+     Oid        *paramTypes;     /* array of parameter type OIDs */
+     int         numParams;      /* number of array entries */
+ } FixedParamState;
+typedef struct VarParamState
+ {
+     Oid       **paramTypes;     /* array of parameter type OIDs */
+     int        *numParams;      /* number of array entries */
+ } VarParamState;
+ 
+
 PG_MODULE_MAGIC;
 
 #define	PGQR_MAX_STMT_LENGTH		32768	
@@ -602,9 +618,16 @@ static void pgqr_reanalyze(const char *new_query_string)
          * 2. ParamTypes 
          * 3. queryEnv
          */
+	
 
 	new_parsetree =  NULL;
 	raw_parsetree_list = pg_parse_query(new_query_string);	
+
+	{
+		Oid **paramTypes = NULL;
+		int *numParams = NULL;
+		parse_variable_parameters(new_pstate, paramTypes, numParams); 
+	}
 
 	/*
  	 * we assume only one SQL statement
@@ -644,6 +667,16 @@ static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: entry: %s",pstate->p_sourcetext);
 
 	statement_rewritten = false;
+
+	if (pstate->p_ref_hook_state != NULL 
+	    /* 
+            ** CREATE PROCEDURE with 0 parameter
+            */
+	    && ((VarParamState *)(pstate->p_ref_hook_state))->numParams != NULL)		
+	{
+		elog(DEBUG1, "pgqr_analyze: numParams=%d", 
+			*((VarParamState *)(pstate->p_ref_hook_state))->numParams);
+	}
 
 	/* pstate->p_sourcetext is the current query text */	
 	elog(DEBUG1,"pg_query_rewrite: pgqr_analyze: %s",pstate->p_sourcetext);
