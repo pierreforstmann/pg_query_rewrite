@@ -524,8 +524,9 @@ static void pgqr_clone_Query(Query *source, Query *target)
 	target->rowMarks= source->rowMarks;
 	target->setOperations= source->setOperations;
 	target->constraintDeps= source->constraintDeps;
+	target->withCheckOptions = source->withCheckOptions;
 #if PG_VERSION_NUM > 140000 
-	target->withCheckOptions = source->limitOption;
+	target->limitOption = source->limitOption;
 #endif
 #if PG_VERSION_NUM > 100000 
 	target->stmt_location=source->stmt_location;
