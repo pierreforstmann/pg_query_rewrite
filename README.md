@@ -20,7 +20,7 @@ Extension must be loaded at server level with `shared_preload_libraries` paramet
 Following SQL statement must be run in each database: <br>
 `create extension pg_query_rewrite;`
 
- `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12 and 13.
+ `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12, 13 and 14.
 
 ## Usage
 `pg_query_rewrite` has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
