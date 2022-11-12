@@ -7,7 +7,7 @@
  * This program is open source, licensed under the PostgreSQL license.
  * For license terms, see the LICENSE file.
  *          
- * Copyright (c) 2020, 2021 Pierre Forstmann.
+ * Copyright (c) 2020, 2021, 2022 Pierre Forstmann.
  *            
  *-------------------------------------------------------------------------
  */
@@ -67,6 +67,9 @@ static	ParseState 	*new_static_pstate = NULL;
 static 	Query		*new_static_query = NULL;  
 
 /* Saved hook values in case of unload */
+#if PG_VERSION_NUM >= 150000
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+#endif
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static ExecutorStart_hook_type prev_executor_start_hook = NULL;
@@ -135,6 +138,30 @@ pgqr_memsize(void)
 	return size;
 }
 
+/*
+ * shmen_request_hook
+ *
+ */
+static void
+pgqr_shmem_request(void)
+{
+	/*
+ 	 * Request additional shared resources.  (These are no-ops if we're not in
+ 	 * the postmaster process.)  We'll allocate or attach to the shared
+ 	 * resources in pgls_shmem_startup().
+	 */
+
+#if PG_VERSION_NUM >= 150000
+	if (prev_shmem_request_hook)
+		prev_shmem_request_hook();
+#endif
+
+	RequestAddinShmemSpace(pgqr_memsize());
+#if PG_VERSION_NUM >= 90600
+	RequestNamedLWLockTranche("pg_query_rewrite", 1);
+#endif
+
+}
 
 /*
  *  shmem_startup hook: allocate or attach to shared memory.
@@ -268,18 +295,16 @@ _PG_init(void)
 	if (pgqr_enabled)
 	{
 
+
 		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled with %d rules", 
                           pgqrMaxRules);
-		/*
- 		 *  Request additional shared resources.  (These are no-ops if we're not in
- 		 *  the postmaster process.)  We'll allocate or attach to the shared
- 		 *   resources in pgqr_shmem_startup().
- 		 */ 
-		RequestAddinShmemSpace(pgqr_memsize());
-#if PG_VERSION_NUM >= 90600
-		RequestNamedLWLockTranche("pg_query_rewrite", 1);
-#endif
 
+#if PG_VERSION_NUM >= 150000
+		prev_shmem_request_hook = shmem_request_hook;
+		shmem_request_hook = pgqr_shmem_request;
+#else
+		pgqr_shmem_request();
+#endif
 		prev_shmem_startup_hook = shmem_startup_hook;
 		shmem_startup_hook = pgqr_shmem_startup;
 		prev_post_parse_analyze_hook = post_parse_analyze_hook;
@@ -290,6 +315,7 @@ _PG_init(void)
 
 
 	}
+
 
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():exit");
 }
