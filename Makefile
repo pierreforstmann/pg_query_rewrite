@@ -3,7 +3,7 @@
 MODULES = pg_query_rewrite 
 
 EXTENSION = pg_query_rewrite
-DATA = pg_query_rewrite--0.0.1.sql
+DATA = pg_query_rewrite--0.0.5.sql
 PGFILEDESC = "pg_query_rewrite - translate SQL statements"
 
 
@@ -16,4 +16,4 @@ include $(PGXS)
 
 #
 pgxn:
-	git archive --format zip  --output ../pgxn/pg_query_rewrite/pg_query_rewrite-0.0.4.zip master
+	git archive --format zip  --output ../pgxn/pg_query_rewrite/pg_query_rewrite-0.0.5.zip master

@@ -1,5 +1,5 @@
 # pg_query_rewrite postgresql extension
 comment = 'translate SQL statements'
-default_version = '0.0.1'
+default_version = '0.0.5'
 module_pathname = '$libdir/pg_query_rewrite'
 relocatable = false
