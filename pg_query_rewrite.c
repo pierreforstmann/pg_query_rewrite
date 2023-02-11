@@ -7,7 +7,7 @@
  * This program is open source, licensed under the PostgreSQL license.
  * For license terms, see the LICENSE file.
  *          
- * Copyright (c) 2020, 2021, 2022 Pierre Forstmann.
+ * Copyright (c) 2020, 2021, 2022, 2023 Pierre Forstmann.
  *            
  *-------------------------------------------------------------------------
  */
@@ -51,7 +51,6 @@ PG_MODULE_MAGIC;
 #define	PGQR_MAX_STMT_LENGTH		32768	
 #define	PGQR_MAX_STMT_BUF_LENGTH	(PGQR_MAX_STMT_LENGTH + 10)
 
-static	bool 	pgqr_enabled = false;
 /*
  * maximum number of rules processed
  * by the extension defined as GUC
@@ -285,37 +284,25 @@ _PG_init(void)
 				NULL);
 
 	if (pgqrMaxRules == 0)
-	{
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite.max_rules not defined");
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite not enabled");
-	}
-	else	pgqr_enabled = true;
+		pgqrMaxRules = 10;
 	
 	
-	if (pgqr_enabled)
-	{
 
-
-		elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled with %d rules", 
-                          pgqrMaxRules);
+	elog(LOG, "pg_query_rewrite:_PG_init(): pg_query_rewrite is enabled with %d rules", 
+                   pgqrMaxRules);
 
 #if PG_VERSION_NUM >= 150000
-		prev_shmem_request_hook = shmem_request_hook;
-		shmem_request_hook = pgqr_shmem_request;
+	prev_shmem_request_hook = shmem_request_hook;
+	shmem_request_hook = pgqr_shmem_request;
 #else
-		pgqr_shmem_request();
+	pgqr_shmem_request();
 #endif
-		prev_shmem_startup_hook = shmem_startup_hook;
-		shmem_startup_hook = pgqr_shmem_startup;
-		prev_post_parse_analyze_hook = post_parse_analyze_hook;
-		post_parse_analyze_hook = pgqr_analyze;
-		prev_executor_start_hook = ExecutorStart_hook;
-	 	ExecutorStart_hook = pgqr_exec;	
-
-
-
-	}
-
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pgqr_shmem_startup;
+	prev_post_parse_analyze_hook = post_parse_analyze_hook;
+	post_parse_analyze_hook = pgqr_analyze;
+	prev_executor_start_hook = ExecutorStart_hook;
+ 	ExecutorStart_hook = pgqr_exec;	
 
 	elog(DEBUG5, "pg_query_rewrite:_PG_init():exit");
 }
@@ -734,7 +721,7 @@ static void pgqr_exec(QueryDesc *queryDesc, int eflags)
 	int stmt_len;
 	const char *src;
 
-	if (pgqr_enabled == true && statement_rewritten == true)
+	if (statement_rewritten == true)
 	{
 
 		src = queryDesc->sourceText;

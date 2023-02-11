@@ -25,7 +25,7 @@ Following SQL statement must be run in each database: <br>
 ## Usage
 `pg_query_rewrite` has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
 <br>
-This extension is enabled if the related library is loaded and if `pg_query_rewrite.max_rules` parameter is set.
+This extension is enabled if the related library is loaded. If `pg_query_rewrite.max_rules` parameter is not set, it set to 10 by default.
 <br>
 <br>
 To create a new rule to translate SQL statement `<source>` into SQL statement `<target>` run: 
