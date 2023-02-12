@@ -120,7 +120,7 @@ static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
 
 static void 	pgqr_incr_rewrite_count(int index);
 
-static int	pgqr_compare(size_t u1, size_t u2, size_t u3);
+bool	pgqr_compare(size_t u1, size_t u2, size_t u3);
 
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
 PG_FUNCTION_INFO_V1(pgqr_rules);
@@ -866,11 +866,11 @@ Datum pgqr_test(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL ( v1 > v2 - (uint64_t)1 );
 }
 
-static int pgqr_compare(uint64_t u1, uint64_t u2, uint64_t u3)
+bool pgqr_compare(uint64_t u1, uint64_t u2, uint64_t u3)
 {
 	uint64_t d;
-	elog(LOG, "u1=%zu u2=%zu u3=%zu u2-u3=%zu u1>u2-u3=%d", u1, u2, u3, u2 - u3, u1 > (u2 - u3));
 	d = u2 - u3;
-	elog(LOG, "u1=%zu d=%zu u1>d=%d", u1, d, u1>d);
-	return (u1 > d);
+	if (u1 > d)
+		return true;
+	else return false;
 }

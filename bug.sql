@@ -1,3 +1,7 @@
+\pset pager off
+--
+select pgqr_rules();
+--
 select pgqr_add_rule('
 select 
 c as cabcdefgh1,
@@ -1729,3 +1733,4 @@ c is null or c=0;
 'select $KO$;');
 --
 
+select pgqr_rules();
