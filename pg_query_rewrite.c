@@ -49,6 +49,9 @@
 PG_MODULE_MAGIC;
 
 #define	PGQR_MAX_STMT_LENGTH		32768	
+
+static uint64_t pgqr_max_stmt_length = PGQR_MAX_STMT_LENGTH;
+
 #define	PGQR_MAX_STMT_BUF_LENGTH	(PGQR_MAX_STMT_LENGTH + 10)
 
 /*
@@ -82,8 +85,8 @@ static ExecutorStart_hook_type prev_executor_start_hook = NULL;
 typedef struct pgqrSharedItem
 {
 	Oid	dbid;
-	char	source_stmt[PGQR_MAX_STMT_LENGTH];
-	char	target_stmt[PGQR_MAX_STMT_LENGTH];
+	char	source_stmt[PGQR_MAX_STMT_BUF_LENGTH];
+	char	target_stmt[PGQR_MAX_STMT_BUF_LENGTH];
 	int	rewrite_count;
 } pgqrSharedItem;
 
@@ -117,10 +120,13 @@ static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
 
 static void 	pgqr_incr_rewrite_count(int index);
 
+static int	pgqr_compare(size_t u1, size_t u2, size_t u3);
+
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
 PG_FUNCTION_INFO_V1(pgqr_rules);
 PG_FUNCTION_INFO_V1(pgqr_remove_rule);
 PG_FUNCTION_INFO_V1(pgqr_truncate_rule);
+PG_FUNCTION_INFO_V1(pgqr_test);
 
 /*
  *  Estimate shared memory space needed.
@@ -331,18 +337,18 @@ static bool pgqr_add_rule_internal(char *source, char *target)
 		ereport(ERROR, (errmsg("Maximum rule number is reached %d", pgqrMaxRules)));
 	}
 
-	if (strlen(source) > PGQR_MAX_STMT_LENGTH - 1)
+	if (pgqr_compare(strlen(source), pgqr_max_stmt_length, 1))
 	{
 		LWLockRelease(pgqr->lock);
-		ereport(ERROR, (errmsg("Source statement length %zu is greater than %d", 
-                               strlen(source), PGQR_MAX_STMT_LENGTH)));
+		ereport(ERROR, (errmsg("Source statement length %zu is greater than %zu", 
+                               strlen(source), pgqr_max_stmt_length)));
 	}
 
-	if (strlen(target) > PGQR_MAX_STMT_LENGTH - 1)
+	if (strlen(target) > (pgqr_max_stmt_length - 1))
 	{
 		LWLockRelease(pgqr->lock);
-		ereport(ERROR, (errmsg("Target statement length %zu is greater than %d", 
-                               strlen(target), PGQR_MAX_STMT_LENGTH)));
+		ereport(ERROR, (errmsg("Target statement length %zu is greater than %zu", 
+                               strlen(target), pgqr_max_stmt_length)));
 	}
 
 	pgqr->rules[pgqr->current_rule_number].dbid = MyDatabaseId;
@@ -853,3 +859,18 @@ static void pgqr_incr_rewrite_count(int index)
 
 }
 
+Datum pgqr_test(PG_FUNCTION_ARGS)
+{
+	uint64_t v1 = 32769;
+	uint64_t v2 = 32768;
+	PG_RETURN_BOOL ( v1 > v2 - (uint64_t)1 );
+}
+
+static int pgqr_compare(uint64_t u1, uint64_t u2, uint64_t u3)
+{
+	uint64_t d;
+	elog(LOG, "u1=%zu u2=%zu u3=%zu u2-u3=%zu u1>u2-u3=%d", u1, u2, u3, u2 - u3, u1 > (u2 - u3));
+	d = u2 - u3;
+	elog(LOG, "u1=%zu d=%zu u1>d=%d", u1, d, u1>d);
+	return (u1 > d);
+}

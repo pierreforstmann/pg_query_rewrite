@@ -17,3 +17,6 @@ CREATE FUNCTION pgqr_truncate_rule() RETURNS BOOLEAN
  AS 'pg_query_rewrite.so', 'pgqr_truncate_rule'
  LANGUAGE C STRICT;
 --
+CREATE FUNCTION pgqr_test() RETURNS BOOLEAN
+ AS 'pg_query_rewrite.so', 'pgqr_test'
+ LANGUAGE C STRICT;
