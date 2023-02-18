@@ -120,6 +120,11 @@ static  void 	pgqr_exec(QueryDesc *queryDesc, int eflags);
 
 static void 	pgqr_incr_rewrite_count(int index);
 
+/*
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ * must not be static to avoid test3 failure with PG 10 and 11
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ */
 bool	pgqr_compare(size_t u1, size_t u2, size_t u3);
 
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
@@ -344,7 +349,7 @@ static bool pgqr_add_rule_internal(char *source, char *target)
                                strlen(source), pgqr_max_stmt_length)));
 	}
 
-	if (strlen(target) > (pgqr_max_stmt_length - 1))
+	if (pgqr_compare(strlen(target),pgqr_max_stmt_length, 1))
 	{
 		LWLockRelease(pgqr->lock);
 		ereport(ERROR, (errmsg("Target statement length %zu is greater than %zu", 
@@ -866,6 +871,11 @@ Datum pgqr_test(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL ( v1 > v2 - (uint64_t)1 );
 }
 
+/*
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ * must not be static to avoid test3 failure with PG 10 and 11
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ */
 bool pgqr_compare(uint64_t u1, uint64_t u2, uint64_t u3)
 {
 	uint64_t d;
