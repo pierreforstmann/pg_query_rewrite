@@ -2,9 +2,9 @@ drop extension if exists pg_query_rewrite;
 NOTICE:  extension "pg_query_rewrite" does not exist, skipping
 --
 create extension pg_query_rewrite;
-select pgqr_truncate_rule();
- pgqr_truncate_rule 
---------------------
+select pgqr_truncate();
+ pgqr_truncate 
+---------------
  t
 (1 row)
 

@@ -1,6 +1,6 @@
 drop database db1;
 drop database db2;
-select pgqr_truncate_rule();
+select pgqr_truncate();
 --
 --
 create database db1;

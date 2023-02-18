@@ -1,7 +1,7 @@
 drop extension if exists pg_query_rewrite;
 --
 create extension pg_query_rewrite;
-select pgqr_truncate_rule();
+select pgqr_truncate();
 --
 drop table if exists t;
 create table t(c int);

@@ -2,9 +2,9 @@ drop database db1;
 ERROR:  database "db1" does not exist
 drop database db2;
 ERROR:  database "db2" does not exist
-select pgqr_truncate_rule();
- pgqr_truncate_rule 
---------------------
+select pgqr_truncate();
+ pgqr_truncate 
+---------------
  t
 (1 row)
 

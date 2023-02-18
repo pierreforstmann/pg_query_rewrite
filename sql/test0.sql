@@ -1,7 +1,7 @@
 drop extension if exists pg_query_rewrite;
 --
 create extension pg_query_rewrite;
-select pgqr_truncate_rule();
+select pgqr_truncate();
 --
 select pgqr_add_rule('select 10;','select 11;');
 --

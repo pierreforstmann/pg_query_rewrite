@@ -125,7 +125,7 @@ bool	pgqr_compare(size_t u1, size_t u2, size_t u3);
 PG_FUNCTION_INFO_V1(pgqr_add_rule);
 PG_FUNCTION_INFO_V1(pgqr_rules);
 PG_FUNCTION_INFO_V1(pgqr_remove_rule);
-PG_FUNCTION_INFO_V1(pgqr_truncate_rule);
+PG_FUNCTION_INFO_V1(pgqr_truncate);
 PG_FUNCTION_INFO_V1(pgqr_test);
 
 /*
@@ -436,7 +436,7 @@ Datum pgqr_remove_rule(PG_FUNCTION_ARGS)
 }
 
 
-static bool pgqr_truncate_rule_internal()
+static bool pgqr_truncate_internal()
 {
 	int	i;
 
@@ -457,17 +457,17 @@ static bool pgqr_truncate_rule_internal()
 }
 
 /*
- *  pgqr_truncate_rule
+ *  pgqr_truncate
  *  
  *  SQL-callable function to remove all SQL translation rules
  * 
  */
-Datum pgqr_truncate_rule(PG_FUNCTION_ARGS)
+Datum pgqr_truncate(PG_FUNCTION_ARGS)
 {
 
          elog(LOG, "pgqr_truncate_rule");
 
-         PG_RETURN_BOOL(pgqr_truncate_rule_internal());
+         PG_RETURN_BOOL(pgqr_truncate_internal());
 
 }
 
