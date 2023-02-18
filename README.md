@@ -43,7 +43,7 @@ To remove a translation rule for SQL statement `<source>`, run:
 To remove all existing translation rules, run:
 <br>
 <br>
-`select pgqr_truncate_rule();`
+`select pgqr_truncate();`
 <br>
 <br>
 To display current translation rules, run:
