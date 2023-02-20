@@ -1,3 +1,11 @@
+FEBRUARY 2023 - v0.0.5
+
+- default setting for pg_query_rwrite.max_rules is set to 10 to fix bug found in issue #1.
+- pgqr_truncate_rules is renamed to pgqr_truncate_rule
+
+- code has been modified so that test3 does not fail against PG 10 and PG 11
+- test8 has been added to test character strings as literals and pgqr_remove_rule.
+
 08-JUN-2021 - v0.0.2
 
 This release supports rule scope at database level:
