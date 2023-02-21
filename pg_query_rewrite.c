@@ -334,12 +334,23 @@ _PG_fini(void)
 static bool pgqr_add_rule_internal(char *source, char *target)
 {
 
+	int i;
+
 	LWLockAcquire(pgqr->lock, LW_EXCLUSIVE);
 
 	if (pgqr->current_rule_number == pgqrMaxRules)
 	{
 		LWLockRelease(pgqr->lock);
 		ereport(ERROR, (errmsg("Maximum rule number is reached %d", pgqrMaxRules)));
+	}
+
+	for (i = 0 ; i< pgqr->current_rule_number; i++)
+	{
+		if (strcmp(source, pgqr->rules[i].source_stmt) == 0)
+		{
+			LWLockRelease(pgqr->lock);
+			ereport(ERROR, (errmsg("rule already exists for %s", source)));
+		}
 	}
 
 	if (pgqr_compare(strlen(source), pgqr_max_stmt_length, 1))

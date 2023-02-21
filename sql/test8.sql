@@ -11,6 +11,14 @@ select 100;
 select 'Hello';
 select 'Hello ...';
 --
+select pgqr_add_rule('select ''Hello'';','select ''Good Bye'';');
+select pgqr_add_rule('select 10;','select 11;');
+--
+select 10;
+select 100;
+select 'Hello';
+select 'Hello ...';
+--
 select pgqr_remove_rule('select 10;');
 select 10;
 select 'Hello';
