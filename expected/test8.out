@@ -46,6 +46,36 @@ select 'Hello ...';
 (1 row)
 
 --
+select pgqr_add_rule('select ''Hello'';','select ''Good Bye'';');
+ERROR:  rule already exists for select 'Hello';
+select pgqr_add_rule('select 10;','select 11;');
+ERROR:  rule already exists for select 10;
+--
+select 10;
+ ?column? 
+----------
+       11
+(1 row)
+
+select 100;
+ ?column? 
+----------
+      100
+(1 row)
+
+select 'Hello';
+ ?column? 
+----------
+ Good Bye
+(1 row)
+
+select 'Hello ...';
+ ?column?  
+-----------
+ Hello ...
+(1 row)
+
+--
 select pgqr_remove_rule('select 10;');
  pgqr_remove_rule 
 ------------------
