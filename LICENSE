@@ -1,6 +1,6 @@
-This software, pg_query_rewrite, is released under the terms of the PostgreSQL License.
+This software, pgds, is released under the terms of the PostgreSQL License.
 
-Copyright (c) 2020 2021, Pierre Forstmann.
+Copyright (c) 2023, Pierre Forstmann.
 
 Permission to use, copy, modify, and distribute this software and its 
 documentation for any purpose, without fee, and without a written agreement 
