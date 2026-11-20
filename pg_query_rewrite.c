@@ -45,10 +45,14 @@
 #include "funcapi.h"
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
+#if PG_VERSION_NUM >= 190000
+#include "utils/tuplestore.h"
+#include "utils/lsyscache.h"
+#endif
 
 PG_MODULE_MAGIC;
 
-#define	PGQR_MAX_STMT_LENGTH		32768	
+#define	PGQR_MAX_STMT_LENGTH		3072	
 
 static uint64_t pgqr_max_stmt_length = PGQR_MAX_STMT_LENGTH;
 
@@ -111,6 +115,8 @@ static 	void 	pgqr_shmem_shutdown(int code, Datum arg);
 
 #if PG_VERSION_NUM < 140000
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query);
+#elif PG_VERSION_NUM >= 190000
+static 	void 	pgqr_analyze(ParseState *pstate, Query *query, const JumbleState *jstate);
 #else
 static 	void 	pgqr_analyze(ParseState *pstate, Query *query, JumbleState *jstate);
 #endif
@@ -452,7 +458,7 @@ Datum pgqr_remove_rule(PG_FUNCTION_ARGS)
 }
 
 
-static bool pgqr_truncate_internal()
+static bool pgqr_truncate_internal(void)
 {
 	int	i;
 
@@ -583,7 +589,9 @@ static void pgqr_clone_ParseState(ParseState *source, ParseState *target)
 	target->p_future_ctes= source->p_future_ctes;
 	target->p_parent_cte= source->p_parent_cte;
 	target->p_target_relation= source->p_target_relation;
+#if PG_VERSION_NUM < 190000 
 	target->p_is_insert= source->p_is_insert;
+#endif
 	target->p_windowdefs= source->p_windowdefs;
 	target->p_expr_kind= source->p_expr_kind;
 	target->p_next_resno= source->p_next_resno;
@@ -671,6 +679,8 @@ static void pgqr_reanalyze(const char *new_query_string)
  */
 #if PG_VERSION_NUM < 140000
 static void pgqr_analyze(ParseState *pstate, Query *query)
+#elif PG_VERSION_NUM >= 190000
+static void pgqr_analyze(ParseState *pstate, Query *query, const JumbleState *js)
 #else
 static void pgqr_analyze(ParseState *pstate, Query *query, JumbleState *js)
 #endif

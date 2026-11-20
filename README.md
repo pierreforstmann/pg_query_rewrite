@@ -20,7 +20,7 @@ Extension must be loaded at server level with `shared_preload_libraries` paramet
 Following SQL statement must be run in each database: <br>
 `create extension pg_query_rewrite;`
 
- `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12, 13, 14, 15, 16, 17 and 18.
+ `pg_query_rewrite` has been successfully tested with PostgreSQL 9.5, 9.6, 10, 11, 12, 13, 14, 15, 16, 17, 18 and 19. 
 
 ## Usage
 `pg_query_rewrite` has a single GUC : `pg_query_rewrite.max_rules` which is the maximum number of SQL statements that can be translated.
@@ -94,6 +94,6 @@ CREATE EXTENSION
 ## Limitations
 
 * SQL statements using parameters are not supported.
-* Maximum SQL statement length is hard-coded: currently the maximum statement length is 32K.
+* Maximum SQL statement length is hard-coded: currently the maximum statement length is 3K.
 * SQL translation occurs only if the SQL statement matches exactly the source statement rule for *each* character (it is case sensitive, space sensitive, semicolon sensitive, etc.)
 * SQL translation rules are only stored in shared memory. The extension does not provide any feature to have persistent settings. However [`pg_start_sql`](https://github.com/pierreforstmann/pg_start_sql) can be used to store some SQL statements that are run at each PostgreSQL instance start.
